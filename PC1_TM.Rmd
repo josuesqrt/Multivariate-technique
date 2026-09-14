@@ -1,0 +1,401 @@
+---
+title: "Prueba Z²"
+subtitle: "Análisis multivariado del rendimiento académico"
+author: "Grupo 4"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    number_sections: false
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# 1.Introducción
+
+El rendimiento académico constituye un aspecto importante para conocer el desempeño de los estudiantes y puede ser estudiado a partir de diferentes variables cuantitativas. En este trabajo se analiza una base de datos que contiene información sobre estudiantes de educación secundaria, considerando sus calificaciones en cuatro áreas académicas y el turno al que pertenecen. Para el análisis se selecciona una muestra aleatoria de 50 estudiantes, sobre la cual se estudia el comportamiento de las variables relacionadas con el rendimiento académico.
+
+El propósito del trabajo es analizar estadísticamente el comportamiento del rendimiento académico, no solo considerando cada variable de manera individual, sino también las relaciones que pueden existir entre ellas. El enfoque multivariado permite estudiar simultáneamente las cuatro variables cuantitativas y evaluar si su comportamiento conjunto presenta diferencias respecto a determinados valores de referencia. De esta manera, se busca obtener una visión más completa de la información que la que se obtendría mediante el análisis separado de cada variable.
+
+El método empleado corresponde a un análisis estadístico de carácter descriptivo e inferencial, con énfasis en técnicas de estadística multivariada. La parte descriptiva permite resumir y explorar las características de los datos, mientras que la parte inferencial permite realizar contrastes de hipótesis sobre el comportamiento conjunto de las variables. Para ello, se consideran los supuestos estadísticos necesarios para la aplicación de las pruebas utilizadas.
+
+### 1.1.Objetivo:
+
+Determinar, mediante la prueba Z² multivariada, si el vector de medias poblacionales de las calificaciones de Matemática, Ciencia, Lenguaje e Historia difiere del vector de referencia $(14,14,15,15)$, considerando una matriz de varianza-covarianza conocida.
+
+```{r include , echo=TRUE}
+library(pacman)
+pacman::p_load(nortest,gtExtras,sjPlot,summarytools,GGally,BSDA,inferr,mvnormtest,MVTests,MVN,tidyverse,ggstatsplot,effectsize,car,reshape2,ggthemes,ggpubr,ICSNP,heplots,biotools,ergm,rrcov,Hotelling,echarts4r,gganimate,hrbrthemes,png,gifski,tinytable,readxl)
+```
+
+# 2.Lectura y descripción de los datos
+
+### 2.2.Lectura de la base de datos
+
+```{r lectura de datos, echo=TRUE}
+datos = read_xlsx("Data_Colegio_Final.xlsx")
+tt(head(datos))
+tt(tail(datos))
+```
+
+```{r}
+glimpse(datos)
+```
+
+### 2.2.Descripción de la muestra utilizada
+
+Para efectos del ejercicio en estudio, se utilizaron las 50 observaciones disponibles de la base de datos lo que permite realizar inferencias estadísticas sobre el comportamiento general del rendimiento académico bajo ciertos supuestos, como la normalidad multivariada y la estructura de covarianza entre las variables.
+
+```{r Pregunta1_lectura de datos}
+datosp1 = datos
+head(datosp1)
+```
+
+### 2.3.Análisis exploratorio de la muestra
+
+Se realiza una revisión inicial de la base de datos para observar las primeras y últimas observaciones y conocer su estructura.
+
+La variable `ID` solamente identifica a cada estudiante, por lo que no participa en el análisis estadístico.
+
+```{r exploracion}
+
+datosp1 = datosp1[,-1]
+datosp1$Turno = as.factor(datosp1$Turno)
+glimpse(datosp1)
+```
+
+### 2.4.Distribución por turno
+
+```{r}
+table(datosp1$Turno)
+```
+
+### 2.5.Estadísticas descriptivas
+
+Se obtienen las principales medidas descriptivas de las variables cuantitativas para conocer su tendencia central y variabilidad.
+
+```{r}
+summarytools::descr(datosp1)
+```
+
+**Interpretación:**Lenguaje presenta la mayor media, con 14.44 puntos, mientras que Ciencia presenta la menor, con 12.67 puntos. Matemática e Historia presentan medias de 13.21 y 13.97, respectivamente. La desviación estándar más alta corresponde a Ciencia, con 2.14 puntos, indicando una mayor dispersión de sus calificaciones respecto a las demás asignaturas.
+
+# 3.Selección de variables para el análisis multivariado
+
+### 3.1.Variables consideradas
+
+Se consideran las cuatro variables cuantitativas: Matemática, Ciencia, Lenguaje e Historia.
+
+```{r seleccion de datos}
+datos1 = datosp1[, 1:4]
+tt(head(datos1))
+```
+
+# 4.Análisis gráfico
+
+### 4.1.Histogramas
+
+Los histogramas permiten observar la distribución de las calificaciones de cada asignatura.
+
+```{r histogramas}
+
+datos_long <- pivot_longer(datos1, cols = 1:4)
+
+ggplot(datos_long, aes(x = value, fill = name)) +
+  geom_histogram(bins = 10, color = "black") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Pastel1")
+```
+
+**Interpretación:**Se observan algunas calificaciones bajas, especialmente en Matemática y Ciencia. Estas observaciones representan estudiantes con menor rendimiento, aunque su consideración como valores atípicos debe basarse en el criterio estadístico del diagrama de cajas y no únicamente en que sean menores de 10.
+
+### 4.2.Diagrama de cajas (Boxplot)
+
+El diagrama de cajas permite comparar la distribución de las calificaciones entre las cuatro asignaturas.
+
+```{r boxplot}
+
+boxplot(datos1,
+        main = "Distribución de las calificaciones por asignatura",
+        col = c("#ADD8E6", "#90EE90", "#FFB6C1", "#FFFFE0"),
+        ylab = "Calificación (0-20)",
+        las = 1,
+        cex.axis = 0.8)
+```
+
+**Interpretación:**El gráfico muestra que el rendimiento académico es claramente superior en las materias de letras (Lenguaje e Historia), con medianas en torno a 14 y 15 puntos, en comparación con las de ciencias (Mate y Ciencia), cuyas medianas rondan los 12.5 y 13 puntos. Aunque la dispersión en el 50% central de las calificaciones es similar y moderada entre todas las áreas (rangos intercuartílicos cercanos a 2.5 puntos), todas presentan estudiantes rezagados con notas desaprobatorias atípicas (menores a 10), destacando Lenguaje por registrar, además, una calificación atípica perfecta de 20
+
+# 5.Análisis de asociación entre las variables
+
+### 5.1.Matriz de varianza-covarianza muestral
+
+La matriz de varianza-covarianza permite analizar la variabilidad de cada asignatura y la relación conjunta entre las calificaciones.
+
+Esta matriz corresponde a la covarianza calculada a partir de los datos y se utiliza únicamente para describir la estructura de asociación de la muestra. Para la prueba Z² se utilizará posteriormente una matriz de varianza-covarianza considerada conocida, de acuerdo con el supuesto del procedimiento
+
+```{r seleccion}
+sigma_muestral = cov(datos1) 
+sigma_muestral
+```
+
+La matriz muestra que existe una covarianza positiva alta entre Mate y Ciencia, y también entre Lenguaje e Historia, lo que indica que las notas de estos pares varían en la misma dirección (quien rinde alto en uno, tiende a rendir alto en el otro). En cambio, entre los demás pares de cursos la covarianza es casi cero, indicando que no tienen relación lineal entre sí. Finalmente Ciencia es la materia con mayor dispersión de notas, mientras que Historia es la más homogénea.
+
+### 5.2.Matriz de Correlaciones
+
+Permiten determinar la intensidad y dirección de la relación lineal entre las calificaciones de las diferentes asignaturas.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggpairs(datosp1)
+
+cor(datos1)
+cor.test(datos1$Mate, datos1$Ciencia)
+cor.test(datos1$Mate, datos1$Lenguaje)
+cor.test(datos1$Mate, datos1$Historia)
+cor.test(datos1$Ciencia, datos1$Lenguaje)
+cor.test(datos1$Ciencia, datos1$Historia)
+cor.test(datos1$Lenguaje, datos1$Historia)
+
+```
+
+### 5.3.Interpretación de las relaciones entre variables
+
+Se observa una asociación positiva importante entre Matemática y Ciencia, así como entre Lenguaje e Historia. Esto sugiere que ciertas dimensiones del rendimiento académico presentan un comportamiento conjunto, por lo que resulta pertinente complementar el análisis univariado mediante una metodología multivariada.
+
+# 6.Caso Univariado
+
+### 6.1.Análisis de normalidad de Matemática
+
+Se toma Matemática como ejemplo para el análisis univariado.
+
+### 6.1.1. Prueba de Shapiro-Wilk
+
+Se aplican pruebas de normalidad y una prueba Z para una media con desviación estándar poblacional conocida.
+
+```{r univariada}
+# Se toma Matemática como ejemplo del análisis univariado
+
+d1 = datos1$Mate
+
+# Prueba de Shapiro-Wilk
+
+shapiro.test(d1)
+
+```
+
+Como el p-valor ($0.2075 > 0.05$) es mayor al nivel de significancia,por lo tanto no se rechaza $H_0$; No se encontró evidencia estadísticamente significativa para rechazar la normalidad de las calificaciones de Matemática."
+
+### 6.1.2.Prueba de Lilliefors
+
+```{r z paramedia}
+lillie.test(d1)
+```
+
+El p-valor ($0.5444 > 0.05$) ratifica la prueba anterior; no se rechaza $H_0$, por lo cual el resultado es consistente con el obtenido mediante Shapiro-Wilk.
+
+### 6.2.Prueba Z para una media con desviación estándar conocida
+
+```{r test}
+z.test(datos1$Mate,
+       alternative = "two.sided",
+       mu = 14,
+       sigma.x = 2,
+       conf.level = 0.95)
+```
+
+El p-valor ($0.0052 < 0.05$) indica que se rechaza $H_0$; la nota media poblacional es significativamente diferente de 14
+
+### 6.3. Prueba para la desviación estándar
+
+```{r desviación estándar}
+#Prueba para la desviación estándar 
+
+ifr_os_var_test(datos,
+                Mate,
+                sd = 2,
+                alternative = 'both')
+```
+
+Con un p-valor ($Sig = 0.4626 > 0.05$), no se rechaza $H_0$; no existe evidencia suficiente para afirmar que la desviación estándar sea distinta de 2 ($s = 1.84$).
+
+# 7.Caso multivariado
+
+### 7.1.Normalidad multivariada
+
+Se considera simultáneamente las calificaciones de Matemática, Ciencia, Lenguaje e Historia.
+
+### 7.2. Planteamiento del modelo multivariado
+
+Antes de aplicar la prueba Z² se verifica el supuesto de normalidad multivariada.
+
+```{r Pregunta1_prueba de normalidad multivariada}
+shapiro = mshapiro.test(t(datos1))
+sp_valor = shapiro$p.value
+shapiro
+
+```
+
+No se encontró evidencia suficiente para rechazar el supuesto de normalidad multivariada.
+
+$$H_0: \mathbf{X} \sim N_4(\boldsymbol{\mu},\boldsymbol{\Sigma})$$
+
+$$H_1: \mathbf{X} \not\sim N_4(\boldsymbol{\mu},\boldsymbol{\Sigma})$$ Se consideran conjuntamente las cuatro variables cuantitativas seleccionadas.
+
+```{r caso_multivariado}
+tt(head(datos1))
+```
+
+# 8.Procedimiento para la inferencia mediante Z²
+
+### 8.1.Asignación de parámetros
+
+```{r Pregunta1_parámetros}
+n <- 50       # Tamaño de la muestra
+p <- 4         # Número de variables
+mu <- c(14, 14, 15, 15)
+
+```
+
+### 8.2.Matriz de varianza-covarianza conocida
+
+Para la prueba Z² se considera como conocida la siguiente matriz de varianza-covarianza:
+
+```{r covarianza conocida}
+sigma <- matrix(c(4.2, 3.1, 0.5, 0.2, 
+                  3.1, 3.8, 0.4, 0.3, 
+                  0.5, 0.4, 3.5, 2.8,
+                  0.2, 0.3, 2.8, 3.2), 
+                nrow = 4, byrow = TRUE)
+sigma
+
+```
+
+Para la aplicación de la prueba Z² se considera conocida la matriz de varianza-covarianza Σ establecida previamente para el problema. Esta matriz no se estima a partir de la muestra, sino que se incorpora como un parámetro conocido de la población.
+
+### 8.3.Vector de medias muestrales
+
+Se calculan las medias muestrales de Matemática, Ciencia, Lenguaje e Historia
+
+```{r medias}
+
+# VECTOR DE MEDIAS MUESTRALES
+
+
+media_muestral <- colMeans(datos1)
+
+media_muestral
+```
+
+### 8.4.Planteamiento de hipótesis
+
+Se plantean las siguientes hipótesis:
+
+$$H_0:
+\begin{pmatrix}
+\mu_{Mate} \\
+\mu_{Ciencia} \\
+\mu_{Lenguaje} \\
+\mu_{Historia}
+\end{pmatrix}
+=
+\begin{pmatrix}
+14 \\
+14 \\
+15 \\
+15
+\end{pmatrix}$$
+
+$$H_1:
+\begin{pmatrix}
+\mu_{Mate} \\
+\mu_{Ciencia} \\
+\mu_{Lenguaje} \\
+\mu_{Historia}
+\end{pmatrix}
+\neq
+\begin{pmatrix}
+14 \\
+14 \\
+15 \\
+15
+\end{pmatrix}$$ \### 8.5.Nivel de significancia
+
+$$\alpha = 0.05$$
+
+### 8.6.Estadístico de prueba Z²
+
+```{r Pregunta1_cálculos}
+media_muestral <- colMeans(datos1)
+media_muestral
+
+# Prueba Z² multivariada
+Z2 <- t(media_muestral - mu) %*% solve(sigma / n) %*% (media_muestral - mu)
+
+p_valor <- 1 - pchisq(Z2, df = p)
+
+# Resultados
+cat("Estadística Z^2:", Z2, "\n")
+cat("p-valor:", p_valor, "\n")
+
+# Decisión
+if (p_valor < 0.05) {
+  cat("Rechazar H0: el vector de medias es diferente del vector de medias hipotético.\n")
+} else {
+  cat("No se puede rechazar H0: no hay suficiente evidencia para decir que el vector de medias es diferente del vector de medias hipotético.\n")
+}
+```
+
+### 8.7.Resultados y decisión
+
+**Interpretación:**Existe evidencia estadísticamente significativa para afirmar que el vector de medias poblacionales de las calificaciones de Matemática, Ciencia, Lenguaje e Historia no coincide simultáneamente con el vector de referencia (14,14,15,15).
+
+# 9.Prueba de Bartlett
+
+### 9.1,Planteamiento de la prueba
+
+```{r bartlett}
+
+result <- Bcov(datos1, Sigma = sigma)
+
+summary(result)
+```
+
+### 9.2. Resultados
+
+La prueba de Bartlett mostró evidencia estadísticamente significativa de diferencia entre la matriz de covarianza muestral y la matriz especificada como conocida. Este resultado constituye un análisis complementario y debe considerarse al interpretar el procedimiento, ya que la prueba Z² fue aplicada bajo el supuesto teórico de que la matriz Σ es conocida.
+
+# 10.Discusión
+
+Los resultados exploratorios muestran que las calificaciones presentan comportamientos diferentes entre las asignaturas. Matemática y Ciencia presentan una asociación positiva relativamente alta, mientras que Lenguaje e Historia también muestran una asociación positiva importante. Este comportamiento evidencia que las variables no deben analizarse únicamente de manera aislada, lo que justifica el enfoque multivariado. La prueba Z² permitió evaluar simultáneamente las cuatro medias y mostró evidencia estadísticamente significativa de diferencia respecto al vector de referencia planteado. Sin embargo, la comparación mediante Bartlett mostró diferencias entre la matriz muestral y la matriz especificada, por lo que debe aclararse el origen y carácter conocido de la matriz utilizada en la prueba Z².
+
+# 11.Conclusiones
+
+**1.Sobre el objetivo principal**
+
+La prueba Z² multivariada permitió contrastar simultáneamente las cuatro medias, evitando realizar únicamente contrastes separados para cada asignatura.
+
+**2.Sobre la normalidad multivariada**
+
+Los resultados indican que los datos presentan un comportamiento compatible con una distribución normal multivariada, ya que se obtuvo un p-valor de 0.1179, mayor que 0.05. Por lo tanto, no se rechaza la hipótesis de normalidad multivariada.
+
+**3. Sobre el vector de medias**
+
+La prueba Z² obtuvo un valor de 44.96567 y un p-valor de $4.04\times10^{-9}$, menor que 0.05. Por lo tanto, se rechaza $H_0$ y se concluye que el vector de medias del rendimiento académico difiere significativamente del vector de referencia $(14,14,15,15)$.
+
+**4. Sobre la relación entre las variables**
+
+Se encontró una asociación positiva importante entre Matemática y Ciencia, así como entre Lenguaje e Historia. Esto indica que los estudiantes que presentan un mayor rendimiento en una de estas variables tienden a presentar también un mayor rendimiento en la otra. En las demás variables, las asociaciones fueron débiles.
+
+**5. Sobre la matriz de covarianzas**
+
+La prueba de Bartlett obtuvo un p-valor de 0.00722, menor que 0.05. Por lo tanto, se rechaza la hipótesis de igualdad entre la matriz de covarianzas observada y la matriz de referencia. Este resultado debe considerarse al interpretar la prueba Z², debido a que esta se realizó bajo el supuesto de una matriz de covarianza conocida.
+
+# 12.Bibliografía
+
+- Anderson, T. W. (2003). *An Introduction to Multivariate Statistical Analysis*. Wiley.
+
+- Johnson, R. A., & Wichern, D. W. (2007). *Applied Multivariate Statistical Analysis*. Pearson.
