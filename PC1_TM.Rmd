@@ -1,5 +1,5 @@
 ---
-title: "Prueba Z²"
+title: "Práctica Calificada 1"
 subtitle: "Análisis multivariado del rendimiento académico"
 author: "Grupo 4"
 date: "`r Sys.Date()`"
@@ -9,11 +9,14 @@ output:
     toc_float: true
     number_sections: false
     theme: flatly
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
+
+## PREGUNTA 1
 
 # 1.Introducción
 
@@ -399,3 +402,443 @@ La prueba de Bartlett obtuvo un p-valor de 0.00722, menor que 0.05. Por lo tanto
 - Anderson, T. W. (2003). *An Introduction to Multivariate Statistical Analysis*. Wiley.
 
 - Johnson, R. A., & Wichern, D. W. (2007). *Applied Multivariate Statistical Analysis*. Pearson.
+
+
+## PREGUNTA 2
+
+
+# 1. Introducción
+
+En la industria alimentaria, el aseguramiento de la calidad no puede limitarse a evaluar las características de un producto de forma aislada. Parámetros físicos esenciales de una galleta integral —como el peso, el diámetro, la humedad y el grosor— se encuentran estrechamente correlacionados debido al proceso de horneado y manufactura. Analizar cada variable por separado incrementa drásticamente el riesgo de cometer errores de tipo I en conjunto, ignorando la estructura multivariada del proceso.Para abordar esta problemática, el área de control de calidad de la panificadora busca determinar si el lote de producción actual cumple simultáneamente con los estándares establecidos en su ficha técnica, definidos por el vector objetivo $\boldsymbol{\mu}_0 = (\text{Peso: } 30.0\text{ g},\, \text{Diámetro: } 75.0\text{ mm},\, \text{Humedad: } 4.5\%,\, \text{Grosor: } 8.0\text{ mm})$. Dado que la verdadera matriz de varianza-covarianza del proceso es desconocida, se emplea una muestra aleatoria de $n = 150$ galletas y se aplica la prueba $T^2$ de Hotelling para una muestra.
+
+# 2. Análisis exploratorio descriptivo de los datos
+
+#### Activación de paquetes
+
+```{r, echo =TRUE, message=FALSE, warning=FALSE}
+
+library(readxl)
+library(knitr)
+library(corrplot)
+library(nortest)
+library(gtExtras)
+library(sjPlot)
+library(summarytools)
+library(effectsize)
+library(GGally)
+library(mvnormtest)
+library(BSDA)
+library(inferr)
+library(mvnormtest)
+library(MVTests)
+library(MVN)
+library(tidyverse)
+library(effectsize)
+library(car)
+library(reshape2) 
+library(ggthemes)
+library(ggpubr)
+library(ICSNP)
+library(heplots)
+library(biotools)
+library(ergm)
+library(rrcov)
+library(Hotelling)
+library(echarts4r)
+library(gganimate)
+library(hrbrthemes)
+library(png)
+library(gifski)
+library(tinytable)
+library(rstatix)
+
+```
+
+### 2.1 Lectura de datos
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+datos_galleta <- read_excel("Datos_galleta.xlsx", sheet = "Datos_Galletas")
+
+kable(head(datos_galleta, 10), 
+      caption = "Primeras 10 observaciones del registro de control de calidad de galletas integrales.",
+      align = "c")
+```
+
+### 2.2 Estadísticos descriptivos
+
+```{r, echo=FALSE, results='markup'}
+summarytools::descr(datos_galleta)
+```
+
+-   Simetría y Distribución Normal: Los valores de asimetría están muy cercanos a cero en todas las variables. Asimismo, la curtosis se mantiene en niveles bajos.
+
+-   Consistencia entre Media y Mediana: Para cada variable, la media y la mediana son prácticamente idénticas. Esto confirma la ausencia de sesgos severos causados por valores atípicos extremos en el lote de producción.
+
+-   Variabilidad y Coeficiente de Variación (CV): El coeficiente de variación muestra que el diámetro es la variable más estable y homogénea del proceso, mientras que la humedad presenta la mayor variabilidad relativa, seguida por el peso y el grosor.
+
+*Proximidad al Blanco Técnico: Confirmando los estadísticos anteriores, los valores centrales de la producción se alinean estrechamente con los requerimientos de la ficha técnica.*
+
+### 2.3 Histogramas
+
+```{r, fig.width=8, fig.height=6}
+par(mfrow = c(2, 2))
+
+# 1. Histograma de Peso
+hist(datos_galleta$peso,
+     main = "Distribución del Peso",
+     xlab = "Peso (g)",
+     ylab = "Frecuencia",
+     col = "lightblue")
+
+# 2. Histograma de Diámetro
+hist(datos_galleta$diametro,
+     main = "Distribución del Diámetro",
+     xlab = "Diámetro (mm)",
+     ylab = "Frecuencia",
+     col = "lightgreen")
+
+# 3. Histograma de Humedad
+hist(datos_galleta$humedad,
+     main = "Distribución de la Humedad",
+     xlab = "Humedad (%)",
+     ylab = "Frecuencia",
+     col = "lightpink")
+
+# 4. Histograma de Grosor
+hist(datos_galleta$grosor,
+     main = "Distribución del Grosor",
+     xlab = "Grosor (mm)",
+     ylab = "Frecuencia",
+     col = "lightyellow")
+
+```
+
+*Los cuatro histogramas muestran que el proceso de producción es estable, simétrico y se encuentra correctamente centrado respecto a los estándares de la ficha técnica. Al presentar una forma de campana bien definida sin valores atípicos extremos, se confirma visualmente que las variables cumplen con el comportamiento normal necesario y que el lote de galletas mantiene una calidad uniforme y alineada con el objetivo.*
+
+### 2.4 BoxPlots
+
+```{r, fig.width=8, fig.height=6}
+par(mfrow = c(2, 2))
+
+boxplot(
+  datos_galleta$peso,
+  main = "Boxplot del Peso",
+  ylab = "Peso",
+  col = "lightblue"
+)
+
+boxplot(
+  datos_galleta$diametro,
+  main = "Boxplot del Diámetro",
+  ylab = "Diámetro",
+  col = "lightgreen"
+)
+
+boxplot(
+  datos_galleta$humedad,
+  main = "Boxplot de la Humedad",
+  ylab = "Humedad",
+  col = "lightpink"
+)
+
+boxplot(
+  datos_galleta$grosor,
+  main = "Boxplot del Grosor",
+  ylab = "Grosor",
+  col = "lightyellow"
+)
+
+```
+
+*Los diagramas de caja muestran que el proceso de producción es simétrico y se encuentra estables en sus cuatro variables, ya que las medianas están perfectamente centradas dentro de cada rango intercuartílico. Aunque se aprecian algunos valores atípicos aislados en el peso, el diámetro y el grosor, estos son puntuales y no comprometen la baja dispersión ni la consistencia general del lote.*
+
+### 2.5 Matriz de correlación
+
+```{r}
+matriz_cor <- cor(datos_galleta)
+
+corrplot(
+  matriz_cor,
+  method = "color",
+  type = "upper",
+  addCoef.col = "black",
+  tl.col = "black",
+  tl.srt = 45
+)
+
+```
+
+*La matriz de correlación evidencia una estructura multivariada coherente con la física del proceso: el peso presenta asociaciones moderadas y directas con el diámetro y el grosor, y una relación inversa con la humedad, mientras que el identificador muestra independencia total, descartando sesgos temporales en el registro.*
+
+# 3. Pruebas de supuestos y contraste de hipótesis individuales
+
+### 3.1 Validación de normalidad y prueba t univariada para el peso de la galleta
+
+-   $H_0$: Los datos de la variable peso provienen de una distribución normal.
+
+-   $H_1$: Los datos de la variable peso no provienen de una distribución normal.
+
+-   Nivel de significancia ($\alpha$): 0.05
+
+Para aplicar la prueba t de Student de una muestra, primero verificamos si la variable peso proviene de una distribución normal poblacional mediante las pruebas de Shapiro-Wilk y Lilliefors.
+
+```{r}
+shapiro.test(datos_galleta$peso)
+lillie.test(datos_galleta$peso)
+```
+
+*Con un nivel de confianza del 95%, ambas pruebas estadísticas concluyen que no hay evidencia suficiente para rechazar la normalidad de los datos. Por lo tanto, se asume que la variable peso sigue una distribución normal, cumpliendo satisfactoriamente con el supuesto necesario para proceder con la prueba t de Student.*
+
+### 3.2 Contraste de hipótesis (Prueba t)
+
+Una vez comprobada la normalidad en el paso anterior, puedemos aplicar la prueba estadística para verificar si la media del peso coincide con los $30.0\text{ g}$ de la ficha técnica.
+
+-   $H_0$: El peso promedio poblacional es igual al estándar de la ficha técnica
+
+    ($\mu = 30.0\text{ g}$).
+
+-   $H_1$: El peso promedio poblacional es diferente al estándar
+
+    ($\mu \neq 30.0\text{ g}$).
+
+-   Nivel de significancia ($\alpha$): $0.05$
+
+```{r}
+t.test(datos_galleta$peso, alternative = "two.sided", mu = 30.0, conf.level = 0.95)
+```
+
+*Con un nivel de confianza del 95%, se concluye que no hay diferencias estadísticamente significativas entre el peso promedio del lote muestreado y el estándar especificado. A pesar de que la media muestral (*$29.68\text{ g}$) es ligeramente inferior al objetivo, esta variación es producto del azar muestral. Por lo tanto, el lote de producción cumple con el parámetro de peso establecido en la ficha técnica.
+
+### *Visualización de la Distribución del Peso frente a la Especificación Técnica*
+
+```{r densidad-peso-normal}
+
+ggplot(datos_galleta, aes(x = peso)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 15, fill = "lightblue", color = "black") +
+  stat_function(fun = dnorm, 
+                args = list(mean = mean(datos_galleta$peso), sd = sd(datos_galleta$peso)), 
+                color = "purple", linewidth = 1.5) +
+  geom_vline(xintercept = 30.0, color = "red", linetype = "dashed", linewidth = 1.2) +
+  labs(title = "Distribución del Peso de las Galletas",
+       subtitle = "Línea roja discontinua = Meta de la ficha técnica (30.0 g)",
+       x = "Peso (g)",
+       y = "Densidad") +
+  theme_minimal()
+
+```
+
+*El gráfico confirma visualmente los resultados de la prueba estadística: El punto más alto de la curva está casi pegado a la línea roja punteada.*
+
+### 4 El efecto (Hedges' g)
+
+Mientras que la prueba estadística (el p-value) nos dice si existe una diferencia, el tamaño del efecto (Hedges' g) nos dice qué tan grande o importante es esa diferencia en la vida real.
+
+```{r}
+efecto_peso <- hedges_g(datos_galleta$peso, mu = 30.0)
+
+print(efecto_peso)
+
+interpret_hedges_g(efecto_peso$Hedges_g)
+```
+
+*Esta función complementa el análisis anterior. No solo se comprueba que no hay diferencia estadística significativa (con la prueba t), sino que además se demuestra que la ligerísima diferencia de peso que existe es prácticamente irrelevante. La producción de galletas está cumpliendo el estándar.*
+
+# 5. Validación de supuestos multivariados: Outliers y Normalidad
+
+## 5.1 Outliers 
+
+```{r fig.width=10, fig.height=5}
+datos_multi <- datos_galleta[, c("peso", "diametro", "humedad", "grosor")]
+# 1. Calcular las medias y la matriz de covarianza
+medias <- colMeans(datos_multi)
+covarianza <- cov(datos_multi)
+
+# 2. Calcular las distancias de Mahalanobis para cada galleta
+distancias <- mahalanobis(datos_multi, center = medias, cov = covarianza)
+
+# 3. Dibujar el gráfico
+plot(distancias, 
+     type = "p", 
+     pch = 16, 
+     col = "steelblue",
+     main = "Detección de Outliers Multivariados",
+     ylab = "Distancia de Mahalanobis", 
+     xlab = "Número de Galleta")
+
+# 4. Agregar la línea límite (usando Chi-cuadrado con 4 grados de libertad)
+limite <- qchisq(0.975, df = 4)
+abline(h = limite, col = "red", lwd = 2, lty = 2)
+
+# Opcional: Agregar texto explicativo en el gráfico
+legend("topleft", legend = c("Límite de confianza (97.5%)"), 
+       col = "red", lty = 2, lwd = 2, bty = "n")
+```
+*Al contrastar estas distancias contra el valor crítico de la distribución Chi-cuadrado (con un nivel de confianza del 97.5%), se observa visualmente que prácticamente la totalidad de los datos se mantiene por debajo del límite de control.*
+
+*Únicamente una observación supera la línea de referencia. Dado el tamaño de la muestra (n = 150), la presencia de un solo valor atípico es estadísticamente insignificante y atribuible a la variabilidad natural del proceso.*
+
+## 5.2 Normalidad multivariada (prueba de Shapiro-Wilk)
+
+- H0: Las cuatro características de las galletas (peso, diámetro, humedad y grosor) siguen conjuntamente una distribución normal multivariada.
+
+- H1: Las cuatro características no siguen una distribución normal multivariada.
+
+- Nivel de significancia: 0.05
+
+```{r}
+mshapiro.test(t(as.matrix(datos_multi)))
+```
+
+*Dado que este valor es superior a nuestro nivel de significancia del 0.05, no existe evidencia estadística para rechazar la hipótesis nula. En conclusión, se confirma que los datos cumplen con el supuesto de normalidad multivariada.*
+
+# 6. Pruebas complementarias de normalidad multivariada
+
+```{r}
+# 1. Test MVN de Royston
+royston <- mvn(data = datos_multi, mvn_test = "royston")
+royston$multivariate_normality
+
+# 2. Test MVN de Mardia
+mardia <- mvn(data = datos_multi, mvn_test = "mardia")
+mardia$multivariate_normality
+
+# 3. Test MVN de Henze-Zirkler
+hz <- mvn(data = datos_multi, mvn_test = "hz")
+hz$multivariate_normality
+
+# 4. Test MVN de Doornik-Hansen
+dh <- mvn(data = datos_multi, mvn_test = "doornik_hansen")
+dh$multivariate_normality
+
+# 5. Test MVN de Szekely-Rizzo (Energy)
+energy <- mvn(data = datos_multi, mvn_test = "energy")
+energy$multivariate_normality
+```
+
+*Como la gran mayoría de las pruebas complementarias (4 de 5) respaldan el resultado que ya se había obtenido con Shapiro-Wilk, puedemos afirmar con total seguridad que los datos cumplen con el supuesto de normalidad multivariada.*
+
+
+#  7. Contraste de hipótesis multivariado: prueba $T^2$ de Hotelling
+
+Evaluar si las cuatro variables (peso, diámetro, humedad y grosor) cumplen en conjunto con la ficha técnica.
+
+- H0: El vector de medias poblacional es igual a la especificación técnica
+
+- H1: El vector de medias poblacional difiere de la especificación técnica
+
+```{r}
+# Vector objetivo de la ficha técnica: Peso=30, Diametro=75, Humedad=4.5, Grosor=8
+mu_objetivo <- c(30.0, 75.0, 4.5, 8.0)
+
+HotellingsT2(datos_multi, mu = mu_objetivo)
+```
+*Existe evidencia estadística contundente para concluir que el vector de medias de tu muestra difiere significativamente de la especificación técnica exigida. En resumen: evaluando las cuatro características en conjunto, el lote de galletas no cumple con los estándares de calidad.*
+
+# 8. Regiones de confianza bivariadas
+
+```{r elipses-confianza, fig.width=12, fig.height=4}
+library(ellipse)
+n <- nrow(datos_multi)
+p <- ncol(datos_multi)
+xbar <- colMeans(datos_multi)
+S <- cov(datos_multi)
+
+# Constante de confianza para la media
+tconst <- sqrt((p / n) * ((n - 1) / (n - p)) * qf(0.99, p, n - p))
+
+par(mfrow = c(1, 3)) # Divide la pantalla en 3 columnas
+
+# Gráfico 1: Peso vs Diámetro
+plot(ellipse(x = S[c(1, 2), c(1, 2)], centre = xbar[c(1, 2)], t = tconst),
+     type = "l", xlab = "Peso", ylab = "Diámetro", col = "tomato", lwd = 3,
+     main = "Región Confianza (99%)")
+
+# Gráfico 2: Peso vs Humedad
+plot(ellipse(x = S[c(1, 3), c(1, 3)], centre = xbar[c(1, 3)], t = tconst),
+     type = "l", xlab = "Peso", ylab = "Humedad", col = "green3", lwd = 3,
+     main = "Región Confianza (99%)")
+
+# Gráfico 3: Diámetro vs Grosor
+plot(ellipse(x = S[c(2, 4), c(2, 4)], centre = xbar[c(2, 4)], t = tconst),
+     type = "l", xlab = "Diámetro", ylab = "Grosor", col = "darkblue", lwd = 3,
+     main = "Región Confianza (99%)")
+
+par(mfrow = c(1, 1)) # Restaura la ventana
+```
+
+*El análisis visual bivariado confirma el rechazo de la hipótesis multivariada ($T^2$ de Hotelling). El incumplimiento del lote no se debe al peso ni al diámetro, sino a un exceso de humedad en la formulación o proceso de horneado, el cual está desplazando el promedio real de producción fuera de las especificaciones técnicas aceptables.*
+
+# 9. Intervalos de confianza simultáneos
+
+```{r intervalos-simultaneos}
+
+T.ci <- function(mu, Sigma, n, avec = rep(1, length(mu)), level = 0.95) {
+  p <- length(mu)
+  cval <- qf(level, p, n - p) * p * (n - 1) / (n - p)
+  zhat <- crossprod(avec, mu)
+  zvar <- crossprod(avec, Sigma %*% avec) / n
+  const <- sqrt(cval * zvar)
+  c(lower = zhat - const, upper = zhat + const)
+}
+
+TCI <- tCI <- bon <- chi <- NULL
+alpha_bon <- 1 - 0.05 / (2 * p) # Nivel ajustado para Bonferroni
+
+for (k in 1:p) {
+  avec <- rep(0, p)
+  avec[k] <- 1
+  
+  # 1. Hotelling T^2 Simultáneo
+  TCI <- c(TCI, T.ci(xbar, S, n, avec))
+  # 2. Clásico t de Student (individual)
+  tCI <- c(tCI, xbar[k] - sqrt(S[k, k] / n) * qt(0.975, df = n - 1),
+                xbar[k] + sqrt(S[k, k] / n) * qt(0.975, df = n - 1))
+  # 3. Método de Bonferroni
+  bon <- c(bon, xbar[k] - sqrt(S[k, k] / n) * qt(alpha_bon, df = n - 1),
+                xbar[k] + sqrt(S[k, k] / n) * qt(alpha_bon, df = n - 1))
+  # 4. Aproximación Chi-cuadrado (muestras grandes)
+  chi <- c(chi, xbar[k] - sqrt(S[k, k] / n) * sqrt(qchisq(0.95, df = p)),
+                xbar[k] + sqrt(S[k, k] / n) * sqrt(qchisq(0.95, df = p)))
+}
+
+# Consolidar en una tabla limpia
+tabla_intervalos <- rbind(TCI, tCI, bon, chi)
+rownames(tabla_intervalos) <- c("Simultáneo_T2", "Clásico_t", "Bonferroni", "Aprox_Chi2")
+colnames(tabla_intervalos) <- c("Peso_Inf", "Peso_Sup", "Diam_Inf", "Diam_Sup", 
+                                "Hum_Inf", "Hum_Sup", "Grosor_Inf", "Grosor_Sup")
+
+round(tabla_intervalos, 2)
+```
+
+*La evidencia estadística demuestra numéricamente que el lote de producción no cumple con la especificación técnica general debido, única y exclusivamente, a un exceso de humedad. Las galletas presentan un nivel de humedad real superior al $4.64\%$, lo que amerita una revisión en los tiempos o temperaturas de la fase de horneado.*
+
+## 10. Regiones de predicción (futuras observaciones)
+
+```{r elipses-prediccion, fig.width=12, fig.height=4}
+# Constante para la región de predicción de nuevas observaciones
+pconst <- sqrt((p / n) * ((n^2 - 1) / (n - p)) * qf(0.99, p, n - p))
+
+par(mfrow = c(1, 3)) # Divide la pantalla en 3 columnas
+
+# 1: Predicción Peso vs Diámetro
+plot(ellipse(x = S[c(1, 2), c(1, 2)], centre = xbar[c(1, 2)], t = pconst),
+     type = "l", xlab = "Peso", ylab = "Diámetro", col = "pink3", lwd = 3,
+     main = "Región Predicción (Futuras)")
+
+# 2: Predicción Peso vs Humedad
+plot(ellipse(x = S[c(1, 3), c(1, 3)], centre = xbar[c(1, 3)], t = pconst),
+     type = "l", xlab = "Peso", ylab = "Humedad", col = "red", lwd = 3,
+     main = "Región Predicción (Futuras)")
+
+# 3: Predicción Diámetro vs Grosor
+plot(ellipse(x = S[c(2, 4), c(2, 4)], centre = xbar[c(2, 4)], t = pconst),
+     type = "l", xlab = "Diámetro", ylab = "Grosor", col = "green3", lwd = 3,
+     main = "Región Predicción (Futuras)")
+
+par(mfrow = c(1, 1))
+```
+
+*Aunque el promedio poblacional de la humedad falló el control de calidad (el lote en general es muy húmedo), la variabilidad del proceso productivo es tan grande que es posible y probable que muchas galletas individuales sí cumplan con la especificación exacta de humedad del 4.5%. Sin embargo, desde la perspectiva del control de calidad industrial, el proceso necesita ser calibrado urgentemente, no solo para reducir los niveles promedio de humedad, sino también para disminuir esta inmensa variabilidad entre una galleta y otra.*
+
+
