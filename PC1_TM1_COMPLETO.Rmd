@@ -1,0 +1,1850 @@
+---
+title: "Práctica Calificada 1"
+subtitle: "Análisis multivariado del rendimiento académico"
+author: "Grupo 4"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    number_sections: false
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## PREGUNTA 1
+
+# 1.Introducción
+
+El rendimiento académico constituye un aspecto importante para conocer el desempeño de los estudiantes y puede ser estudiado a partir de diferentes variables cuantitativas. En este trabajo se analiza una base de datos que contiene información sobre estudiantes de educación secundaria, considerando sus calificaciones en cuatro áreas académicas y el turno al que pertenecen. Para el análisis se selecciona una muestra aleatoria de 50 estudiantes, sobre la cual se estudia el comportamiento de las variables relacionadas con el rendimiento académico.
+
+El propósito del trabajo es analizar estadísticamente el comportamiento del rendimiento académico, no solo considerando cada variable de manera individual, sino también las relaciones que pueden existir entre ellas. El enfoque multivariado permite estudiar simultáneamente las cuatro variables cuantitativas y evaluar si su comportamiento conjunto presenta diferencias respecto a determinados valores de referencia. De esta manera, se busca obtener una visión más completa de la información que la que se obtendría mediante el análisis separado de cada variable.
+
+El método empleado corresponde a un análisis estadístico de carácter descriptivo e inferencial, con énfasis en técnicas de estadística multivariada. La parte descriptiva permite resumir y explorar las características de los datos, mientras que la parte inferencial permite realizar contrastes de hipótesis sobre el comportamiento conjunto de las variables. Para ello, se consideran los supuestos estadísticos necesarios para la aplicación de las pruebas utilizadas.
+
+### 1.1.Objetivo:
+
+Determinar, mediante la prueba Z² multivariada, si el vector de medias poblacionales de las calificaciones de Matemática, Ciencia, Lenguaje e Historia difiere del vector de referencia $(14,14,15,15)$, considerando una matriz de varianza-covarianza conocida.
+
+```{r include , echo=TRUE}
+library(pacman)
+p_load(ggplot2,gt,nortest,gtExtras,sjPlot,summarytools,GGally,BSDA,inferr,mvnormtest,MVTests,MVN,tidyverse,ggstatsplot,effectsize,car,reshape2,ggthemes,ggpubr,ICSNP,heplots,biotools,ergm,rrcov,Hotelling,echarts4r,gganimate,hrbrthemes,png,gifski,tinytable,readxl)
+```
+
+# 2.Lectura y descripción de los datos
+
+### 2.2.Lectura de la base de datos
+
+```{r lectura de datos, echo=TRUE}
+datos = read_xlsx("Data_Colegio_Final.xlsx")
+tt(head(datos))
+tt(tail(datos))
+```
+
+```{r}
+glimpse(datos)
+```
+
+### 2.2.Descripción de la muestra utilizada
+
+Para efectos del ejercicio en estudio, se utilizaron las 50 observaciones disponibles de la base de datos lo que permite realizar inferencias estadísticas sobre el comportamiento general del rendimiento académico bajo ciertos supuestos, como la normalidad multivariada y la estructura de covarianza entre las variables.
+
+```{r Pregunta1_lectura de datos}
+datosp1 = datos
+head(datosp1)
+```
+
+### 2.3.Análisis exploratorio de la muestra
+
+Se realiza una revisión inicial de la base de datos para observar las primeras y últimas observaciones y conocer su estructura.
+
+La variable `ID` solamente identifica a cada estudiante, por lo que no participa en el análisis estadístico.
+
+```{r exploracion}
+
+datosp1 = datosp1[,-1]
+datosp1$Turno = as.factor(datosp1$Turno)
+glimpse(datosp1)
+```
+
+### 2.4.Distribución por turno
+
+```{r}
+table(datosp1$Turno)
+```
+
+### 2.5.Estadísticas descriptivas
+
+Se obtienen las principales medidas descriptivas de las variables cuantitativas para conocer su tendencia central y variabilidad.
+
+```{r}
+summarytools::descr(datosp1)
+```
+
+**Interpretación:**Lenguaje presenta la mayor media, con 14.44 puntos, mientras que Ciencia presenta la menor, con 12.67 puntos. Matemática e Historia presentan medias de 13.21 y 13.97, respectivamente. La desviación estándar más alta corresponde a Ciencia, con 2.14 puntos, indicando una mayor dispersión de sus calificaciones respecto a las demás asignaturas.
+
+# 3.Selección de variables para el análisis multivariado
+
+### 3.1.Variables consideradas
+
+Se consideran las cuatro variables cuantitativas: Matemática, Ciencia, Lenguaje e Historia.
+
+```{r seleccion de datos}
+datos1 = datosp1[, 1:4]
+tt(head(datos1))
+```
+
+# 4.Análisis gráfico
+
+### 4.1.Histogramas
+
+Los histogramas permiten observar la distribución de las calificaciones de cada asignatura.
+
+```{r histogramas}
+
+datos_long <- pivot_longer(datos1, cols = 1:4)
+
+ggplot(datos_long, aes(x = value, fill = name)) +
+  geom_histogram(bins = 10, color = "black") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Pastel1")
+```
+
+**Interpretación:**Se observan algunas calificaciones bajas, especialmente en Matemática y Ciencia. Estas observaciones representan estudiantes con menor rendimiento, aunque su consideración como valores atípicos debe basarse en el criterio estadístico del diagrama de cajas y no únicamente en que sean menores de 10.
+
+### 4.2.Diagrama de cajas (Boxplot)
+
+El diagrama de cajas permite comparar la distribución de las calificaciones entre las cuatro asignaturas.
+
+```{r boxplot}
+
+boxplot(datos1,
+        main = "Distribución de las calificaciones por asignatura",
+        col = c("#ADD8E6", "#90EE90", "#FFB6C1", "#FFFFE0"),
+        ylab = "Calificación (0-20)",
+        las = 1,
+        cex.axis = 0.8)
+```
+
+**Interpretación:**El gráfico muestra que el rendimiento académico es claramente superior en las materias de letras (Lenguaje e Historia), con medianas en torno a 14 y 15 puntos, en comparación con las de ciencias (Mate y Ciencia), cuyas medianas rondan los 12.5 y 13 puntos. Aunque la dispersión en el 50% central de las calificaciones es similar y moderada entre todas las áreas (rangos intercuartílicos cercanos a 2.5 puntos), todas presentan estudiantes rezagados con notas desaprobatorias atípicas (menores a 10), destacando Lenguaje por registrar, además, una calificación atípica perfecta de 20
+
+# 5.Análisis de asociación entre las variables
+
+### 5.1.Matriz de varianza-covarianza muestral
+
+La matriz de varianza-covarianza permite analizar la variabilidad de cada asignatura y la relación conjunta entre las calificaciones.
+
+Esta matriz corresponde a la covarianza calculada a partir de los datos y se utiliza únicamente para describir la estructura de asociación de la muestra. Para la prueba Z² se utilizará posteriormente una matriz de varianza-covarianza considerada conocida, de acuerdo con el supuesto del procedimiento
+
+```{r seleccion}
+sigma_muestral = cov(datos1) 
+sigma_muestral
+```
+
+La matriz muestra que existe una covarianza positiva alta entre Mate y Ciencia, y también entre Lenguaje e Historia, lo que indica que las notas de estos pares varían en la misma dirección (quien rinde alto en uno, tiende a rendir alto en el otro). En cambio, entre los demás pares de cursos la covarianza es casi cero, indicando que no tienen relación lineal entre sí. Finalmente Ciencia es la materia con mayor dispersión de notas, mientras que Historia es la más homogénea.
+
+### 5.2.Matriz de Correlaciones
+
+Permiten determinar la intensidad y dirección de la relación lineal entre las calificaciones de las diferentes asignaturas.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggpairs(datosp1)
+
+cor(datos1)
+cor.test(datos1$Mate, datos1$Ciencia)
+cor.test(datos1$Mate, datos1$Lenguaje)
+cor.test(datos1$Mate, datos1$Historia)
+cor.test(datos1$Ciencia, datos1$Lenguaje)
+cor.test(datos1$Ciencia, datos1$Historia)
+cor.test(datos1$Lenguaje, datos1$Historia)
+
+```
+
+### 5.3.Interpretación de las relaciones entre variables
+
+Se observa una asociación positiva importante entre Matemática y Ciencia, así como entre Lenguaje e Historia. Esto sugiere que ciertas dimensiones del rendimiento académico presentan un comportamiento conjunto, por lo que resulta pertinente complementar el análisis univariado mediante una metodología multivariada.
+
+# 6.Caso Univariado
+
+### 6.1.Análisis de normalidad de Matemática
+
+Se toma Matemática como ejemplo para el análisis univariado.
+
+### 6.1.1. Prueba de Shapiro-Wilk
+
+Se aplican pruebas de normalidad y una prueba Z para una media con desviación estándar poblacional conocida.
+
+```{r univariada}
+# Se toma Matemática como ejemplo del análisis univariado
+
+d1 = datos1$Mate
+
+# Prueba de Shapiro-Wilk
+
+shapiro.test(d1)
+
+```
+
+Como el p-valor ($0.2075 > 0.05$) es mayor al nivel de significancia,por lo tanto no se rechaza $H_0$; No se encontró evidencia estadísticamente significativa para rechazar la normalidad de las calificaciones de Matemática."
+
+### 6.1.2.Prueba de Lilliefors
+
+```{r z paramedia}
+lillie.test(d1)
+```
+
+El p-valor ($0.5444 > 0.05$) ratifica la prueba anterior; no se rechaza $H_0$, por lo cual el resultado es consistente con el obtenido mediante Shapiro-Wilk.
+
+### 6.2.Prueba Z para una media con desviación estándar conocida
+
+```{r test}
+z.test(datos1$Mate,
+       alternative = "two.sided",
+       mu = 14,
+       sigma.x = 2,
+       conf.level = 0.95)
+```
+
+El p-valor ($0.0052 < 0.05$) indica que se rechaza $H_0$; la nota media poblacional es significativamente diferente de 14
+
+### 6.3. Prueba para la desviación estándar
+
+```{r desviación estándar}
+#Prueba para la desviación estándar 
+
+ifr_os_var_test(datos,
+                Mate,
+                sd = 2,
+                alternative = 'both')
+```
+
+Con un p-valor ($Sig = 0.4626 > 0.05$), no se rechaza $H_0$; no existe evidencia suficiente para afirmar que la desviación estándar sea distinta de 2 ($s = 1.84$).
+
+# 7.Caso multivariado
+
+### 7.1.Normalidad multivariada
+
+Se considera simultáneamente las calificaciones de Matemática, Ciencia, Lenguaje e Historia.
+
+### 7.2. Planteamiento del modelo multivariado
+
+Antes de aplicar la prueba Z² se verifica el supuesto de normalidad multivariada.
+
+```{r Pregunta1_prueba de normalidad multivariada}
+shapiro = mshapiro.test(t(datos1))
+sp_valor = shapiro$p.value
+shapiro
+
+```
+
+No se encontró evidencia suficiente para rechazar el supuesto de normalidad multivariada.
+
+$$H_0: \mathbf{X} \sim N_4(\boldsymbol{\mu},\boldsymbol{\Sigma})$$
+
+$$H_1: \mathbf{X} \not\sim N_4(\boldsymbol{\mu},\boldsymbol{\Sigma})$$ Se consideran conjuntamente las cuatro variables cuantitativas seleccionadas.
+
+```{r caso_multivariado}
+tt(head(datos1))
+```
+
+# 8.Procedimiento para la inferencia mediante Z²
+
+### 8.1.Asignación de parámetros
+
+```{r Pregunta1_parámetros}
+n <- 50       # Tamaño de la muestra
+p <- 4         # Número de variables
+mu <- c(14, 14, 15, 15)
+
+```
+
+### 8.2.Matriz de varianza-covarianza conocida
+
+Para la prueba Z² se considera como conocida la siguiente matriz de varianza-covarianza:
+
+```{r covarianza conocida}
+sigma <- matrix(c(4.2, 3.1, 0.5, 0.2, 
+                  3.1, 3.8, 0.4, 0.3, 
+                  0.5, 0.4, 3.5, 2.8,
+                  0.2, 0.3, 2.8, 3.2), 
+                nrow = 4, byrow = TRUE)
+sigma
+
+```
+
+Para la aplicación de la prueba Z² se considera conocida la matriz de varianza-covarianza Σ establecida previamente para el problema. Esta matriz no se estima a partir de la muestra, sino que se incorpora como un parámetro conocido de la población.
+
+### 8.3.Vector de medias muestrales
+
+Se calculan las medias muestrales de Matemática, Ciencia, Lenguaje e Historia
+
+```{r medias}
+
+# VECTOR DE MEDIAS MUESTRALES
+
+
+media_muestral <- colMeans(datos1)
+
+media_muestral
+```
+
+### 8.4.Planteamiento de hipótesis
+
+Se plantean las siguientes hipótesis:
+
+$$H_0:
+\begin{pmatrix}
+\mu_{Mate} \\
+\mu_{Ciencia} \\
+\mu_{Lenguaje} \\
+\mu_{Historia}
+\end{pmatrix}
+=
+\begin{pmatrix}
+14 \\
+14 \\
+15 \\
+15
+\end{pmatrix}$$
+
+$$H_1:
+\begin{pmatrix}
+\mu_{Mate} \\
+\mu_{Ciencia} \\
+\mu_{Lenguaje} \\
+\mu_{Historia}
+\end{pmatrix}
+\neq
+\begin{pmatrix}
+14 \\
+14 \\
+15 \\
+15
+\end{pmatrix}$$ \### 8.5.Nivel de significancia
+
+$$\alpha = 0.05$$
+
+### 8.6.Estadístico de prueba Z²
+
+```{r Pregunta1_cálculos}
+media_muestral <- colMeans(datos1)
+media_muestral
+
+# Prueba Z² multivariada
+Z2 <- t(media_muestral - mu) %*% solve(sigma / n) %*% (media_muestral - mu)
+
+p_valor <- 1 - pchisq(Z2, df = p)
+
+# Resultados
+cat("Estadística Z^2:", Z2, "\n")
+cat("p-valor:", p_valor, "\n")
+
+# Decisión
+if (p_valor < 0.05) {
+  cat("Rechazar H0: el vector de medias es diferente del vector de medias hipotético.\n")
+} else {
+  cat("No se puede rechazar H0: no hay suficiente evidencia para decir que el vector de medias es diferente del vector de medias hipotético.\n")
+}
+```
+
+### 8.7.Resultados y decisión
+
+**Interpretación:**Existe evidencia estadísticamente significativa para afirmar que el vector de medias poblacionales de las calificaciones de Matemática, Ciencia, Lenguaje e Historia no coincide simultáneamente con el vector de referencia (14,14,15,15).
+
+# 9.Prueba de Bartlett
+
+### 9.1,Planteamiento de la prueba
+
+```{r bartlett}
+
+result <- Bcov(datos1, Sigma = sigma)
+
+summary(result)
+```
+
+### 9.2. Resultados
+
+La prueba de Bartlett mostró evidencia estadísticamente significativa de diferencia entre la matriz de covarianza muestral y la matriz especificada como conocida. Este resultado constituye un análisis complementario y debe considerarse al interpretar el procedimiento, ya que la prueba Z² fue aplicada bajo el supuesto teórico de que la matriz Σ es conocida.
+
+# 10.Discusión
+
+Los resultados exploratorios muestran que las calificaciones presentan comportamientos diferentes entre las asignaturas. Matemática y Ciencia presentan una asociación positiva relativamente alta, mientras que Lenguaje e Historia también muestran una asociación positiva importante. Este comportamiento evidencia que las variables no deben analizarse únicamente de manera aislada, lo que justifica el enfoque multivariado. La prueba Z² permitió evaluar simultáneamente las cuatro medias y mostró evidencia estadísticamente significativa de diferencia respecto al vector de referencia planteado. Sin embargo, la comparación mediante Bartlett mostró diferencias entre la matriz muestral y la matriz especificada, por lo que debe aclararse el origen y carácter conocido de la matriz utilizada en la prueba Z².
+
+# 11.Conclusiones
+
+**1.Sobre el objetivo principal**
+
+La prueba Z² multivariada permitió contrastar simultáneamente las cuatro medias, evitando realizar únicamente contrastes separados para cada asignatura.
+
+**2.Sobre la normalidad multivariada**
+
+Los resultados indican que los datos presentan un comportamiento compatible con una distribución normal multivariada, ya que se obtuvo un p-valor de 0.1179, mayor que 0.05. Por lo tanto, no se rechaza la hipótesis de normalidad multivariada.
+
+**3. Sobre el vector de medias**
+
+La prueba Z² obtuvo un valor de 44.96567 y un p-valor de $4.04\times10^{-9}$, menor que 0.05. Por lo tanto, se rechaza $H_0$ y se concluye que el vector de medias del rendimiento académico difiere significativamente del vector de referencia $(14,14,15,15)$.
+
+**4. Sobre la relación entre las variables**
+
+Se encontró una asociación positiva importante entre Matemática y Ciencia, así como entre Lenguaje e Historia. Esto indica que los estudiantes que presentan un mayor rendimiento en una de estas variables tienden a presentar también un mayor rendimiento en la otra. En las demás variables, las asociaciones fueron débiles.
+
+**5. Sobre la matriz de covarianzas**
+
+La prueba de Bartlett obtuvo un p-valor de 0.00722, menor que 0.05. Por lo tanto, se rechaza la hipótesis de igualdad entre la matriz de covarianzas observada y la matriz de referencia. Este resultado debe considerarse al interpretar la prueba Z², debido a que esta se realizó bajo el supuesto de una matriz de covarianza conocida.
+
+# 12.Bibliografía
+
+- Anderson, T. W. (2003). *An Introduction to Multivariate Statistical Analysis*. Wiley.
+
+- Johnson, R. A., & Wichern, D. W. (2007). *Applied Multivariate Statistical Analysis*. Pearson.
+
+
+## PREGUNTA 2
+
+# 1.Introducción
+
+La craneometría es una de las áreas clásicas de aplicación del análisis multivariado, ya que la forma del cráneo humano no puede resumirse adecuadamente en una sola medida: el ancho, la altura, la longitud y otras dimensiones óseas están fisiológicamente correlacionadas entre sí. Evaluar cada medida de manera aislada incrementa el riesgo de errores de tipo I y desconoce la estructura conjunta de variación propia de la morfología craneal. En este trabajo se utiliza la base de datos real `Skulls`, disponible en el paquete `heplots` de R, la cual contiene medidas craneométricas de 150 cráneos egipcios masculinos hallados en la necrópolis de Badari, recolectados originalmente por Thomson y Randall-MacIver (1905) y clasificados en cinco épocas históricas distintas.
+
+Para efectos de esta práctica se toma como muestra de estudio el subgrupo de cráneos correspondiente a la época más antigua registrada, aproximadamente 4000 a.C., el cual constituye una muestra real de $n=30$ cráneos independientes. El objetivo es determinar si el vector de medias poblacionales de las cuatro variables craneométricas (ancho máximo, altura basibregmática, longitud basialveolar y altura nasal) difiere de un vector de referencia planteado con fines comparativos. Dado que en este caso la matriz de varianza-covarianza poblacional no se asume conocida, se aplica la prueba $T^2$ de Hotelling para una muestra con matriz de covarianza desconocida, estimada a partir de los propios datos.
+
+### 1.1.Objetivo:
+
+Determinar, mediante la prueba $T^2$ de Hotelling con matriz de varianza-covarianza desconocida, si el vector de medias poblacionales de las variables craneométricas (mb, bh, bl, nh) de los cráneos egipcios de la época c. 4000 a.C. difiere del vector de referencia planteado $(133,\,133,\,99,\,50)$.
+
+# 2.Lectura y descripción de los datos
+
+### 2.1.Activación de paquetes adicionales
+
+```{r Pregunta2_paquetes, echo=TRUE}
+p_load(heplots, corrplot, kableExtra)
+```
+
+### 2.2.Lectura de la base de datos
+
+La base de datos `Skulls` es un conjunto de datos real, público e incluido en el paquete `heplots`. Contiene 150 observaciones y 5 variables: `epoch` (época histórica) y cuatro medidas craneométricas en milímetros: `mb` (ancho máximo del cráneo), `bh` (altura basibregmática), `bl` (longitud basialveolar) y `nh` (altura nasal).
+
+```{r Pregunta2_lectura}
+data("Skulls", package = "heplots")
+tt(head(Skulls))
+tt(tail(Skulls))
+```
+
+```{r}
+glimpse(Skulls)
+table(Skulls$epoch)
+```
+
+### 2.3.Descripción de la muestra utilizada
+
+Para este ejercicio se selecciona únicamente el subconjunto correspondiente a la época más antigua, `c4000BC`, compuesto por 30 cráneos. Se trabaja con una sola población (no se comparan épocas), de modo que el análisis corresponde a una prueba de una muestra sobre el vector de medias.
+
+```{r Pregunta2_seleccion_muestra}
+datos_cráneos <- Skulls %>% filter(epoch == "c4000BC")
+datos_multi <- datos_cráneos %>% dplyr::select(mb, bh, bl, nh)
+tt(head(datos_multi))
+dim(datos_multi)
+```
+
+# 3.Análisis exploratorio descriptivo
+
+### 3.1.Estadísticas descriptivas
+
+```{r Pregunta2_descriptivos}
+summarytools::descr(datos_multi)
+```
+
+**Interpretación:** La variable `mb` (ancho máximo) presenta una media de `r round(mean(datos_multi$mb),2)` mm, `bh` (altura basibregmática) de `r round(mean(datos_multi$bh),2)` mm, `bl` (longitud basialveolar) de `r round(mean(datos_multi$bl),2)` mm y `nh` (altura nasal) de `r round(mean(datos_multi$nh),2)` mm. Las cuatro variables muestran coeficientes de variación relativamente bajos, lo cual es consistente con tratarse de medidas óseas de una misma población homogénea.
+
+### 3.2.Histogramas
+
+```{r Pregunta2_histogramas}
+datos_long <- pivot_longer(datos_multi, cols = 1:4)
+
+ggplot(datos_long, aes(x = value, fill = name)) +
+  geom_histogram(bins = 8, color = "black") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+```
+
+**Interpretación:** Las cuatro variables muestran distribuciones aproximadamente simétricas y unimodales, sin valores extremos evidentes, lo cual es un primer indicio favorable respecto al supuesto de normalidad que se evaluará más adelante.
+
+### 3.3.Diagrama de cajas (Boxplot)
+
+```{r Pregunta2_boxplot}
+boxplot(datos_multi,
+        main = "Distribución de las medidas craneométricas (época c. 4000 a.C.)",
+        col = c("#ADD8E6", "#90EE90", "#FFB6C1", "#FFFFE0"),
+        ylab = "Milímetros",
+        las = 1,
+        cex.axis = 0.9)
+```
+
+**Interpretación:** Se observa que `bl` (longitud basialveolar) presenta los valores más altos y `nh` (altura nasal) los más bajos, lo cual es coherente con la naturaleza de cada medida anatómica. La dispersión es moderada en las cuatro variables y no se aprecian valores atípicos marcados.
+
+# 4.Análisis de asociación entre las variables
+
+### 4.1.Matriz de varianza-covarianza muestral
+
+Dado que en este problema la matriz de covarianza poblacional se considera desconocida, esta matriz muestral es precisamente la que se utilizará para estimar $\Sigma$ dentro de la prueba $T^2$ de Hotelling.
+
+```{r Pregunta2_covarianza}
+sigma_muestral <- cov(datos_multi)
+sigma_muestral
+```
+
+### 4.2.Matriz de correlaciones
+
+```{r Pregunta2_correlacion, echo=FALSE, message=FALSE, warning=FALSE}
+ggpairs(datos_multi)
+
+matriz_cor <- cor(datos_multi)
+matriz_cor
+
+corrplot(matriz_cor,
+         method = "color",
+         type = "upper",
+         addCoef.col = "black",
+         tl.col = "black",
+         tl.srt = 45)
+
+cor.test(datos_multi$mb, datos_multi$bh)
+cor.test(datos_multi$mb, datos_multi$bl)
+cor.test(datos_multi$mb, datos_multi$nh)
+cor.test(datos_multi$bh, datos_multi$bl)
+cor.test(datos_multi$bh, datos_multi$nh)
+cor.test(datos_multi$bl, datos_multi$nh)
+```
+
+**Interpretación:** Las correlaciones entre las medidas craneométricas son, en general, moderadas y positivas, lo cual es esperable dado que corresponden a dimensiones de una misma estructura ósea que crece de forma conjunta. Esta asociación conjunta confirma que las cuatro variables no deben analizarse de manera aislada, justificando el enfoque multivariado.
+
+# 5.Validación de supuestos para la prueba de Hotelling
+
+### 5.1.Detección de valores atípicos multivariados (Distancia de Mahalanobis)
+
+```{r Pregunta2_mahalanobis, fig.width=9, fig.height=5}
+medias <- colMeans(datos_multi)
+covarianza <- cov(datos_multi)
+
+distancias <- mahalanobis(datos_multi, center = medias, cov = covarianza)
+
+limite <- qchisq(0.975, df = 4)
+
+plot(distancias,
+     type = "p", pch = 16, col = "steelblue",
+     main = "Detección de valores atípicos multivariados",
+     ylab = "Distancia de Mahalanobis",
+     xlab = "Cráneo (n = 30)")
+abline(h = limite, col = "red", lwd = 2, lty = 2)
+legend("topleft", legend = "Límite de control (97.5%)", col = "red", lty = 2, lwd = 2, bty = "n")
+```
+
+**Interpretación:** `r sum(distancias > limite)` de las 30 observaciones supera el límite de control basado en la distribución Chi-cuadrado con 4 grados de libertad, por lo que `r ifelse(sum(distancias > limite) == 0, "no se identifican valores atípicos multivariados relevantes en la muestra.", "existen observaciones puntuales que exceden el límite, aunque dado el tamaño muestral no se consideran suficientes para invalidar el análisis conjunto.")`
+
+### 5.2.Normalidad multivariada (prueba de Shapiro-Wilk multivariada)
+
+- $H_0$: Las cuatro medidas craneométricas siguen conjuntamente una distribución normal multivariada.
+- $H_1$: Las cuatro medidas craneométricas no siguen conjuntamente una distribución normal multivariada.
+- Nivel de significancia: 0.05
+
+```{r Pregunta2_shapiro_multivariado}
+shapiro_multi <- mshapiro.test(t(as.matrix(datos_multi)))
+sp_valor <- shapiro_multi$p.value
+shapiro_multi
+```
+
+**Interpretación:** Con un p-valor de `r round(sp_valor,4)`, `r ifelse(sp_valor > 0.05, "no existe evidencia estadística suficiente para rechazar H0, por lo que se asume el cumplimiento del supuesto de normalidad multivariada.", "existe evidencia estadística para rechazar H0, por lo que el supuesto de normalidad multivariada no se cumple estrictamente; este resultado se retoma en la discusión.")`
+
+### 5.3.Pruebas complementarias de normalidad multivariada
+
+```{r Pregunta2_normalidad_complementaria}
+royston <- mvn(data = datos_multi, mvn_test = "royston")
+royston$multivariate_normality
+
+mardia <- mvn(data = datos_multi, mvn_test = "mardia")
+mardia$multivariate_normality
+
+hz <- mvn(data = datos_multi, mvn_test = "hz")
+hz$multivariate_normality
+
+dh <- mvn(data = datos_multi, mvn_test = "doornik_hansen")
+dh$multivariate_normality
+
+energy <- mvn(data = datos_multi, mvn_test = "energy")
+energy$multivariate_normality
+```
+
+**Interpretación:** Estas pruebas complementarias se contrastan con el resultado de Shapiro-Wilk multivariada obtenido en la sección anterior, con el fin de contar con un respaldo más robusto sobre el cumplimiento (o no) del supuesto de normalidad multivariada antes de proceder con la prueba $T^2$ de Hotelling.
+
+# 6.Contraste de hipótesis multivariado: prueba $T^2$ de Hotelling ($\Sigma$ desconocida)
+
+### 6.1.Planteamiento de hipótesis
+
+$$H_0:
+\begin{pmatrix}
+\mu_{mb} \\
+\mu_{bh} \\
+\mu_{bl} \\
+\mu_{nh}
+\end{pmatrix}
+=
+\begin{pmatrix}
+133 \\
+133 \\
+99 \\
+50
+\end{pmatrix}
+\qquad
+H_1:
+\begin{pmatrix}
+\mu_{mb} \\
+\mu_{bh} \\
+\mu_{bl} \\
+\mu_{nh}
+\end{pmatrix}
+\neq
+\begin{pmatrix}
+133 \\
+133 \\
+99 \\
+50
+\end{pmatrix}$$
+
+El vector $\mu_0 = (133,\,133,\,99,\,50)$ se plantea como un vector de referencia hipotético con fines comparativos dentro de este ejercicio académico, análogo al vector de referencia empleado en la Pregunta 1.
+
+### 6.2.Nivel de significancia
+
+$$\alpha = 0.05$$
+
+### 6.3.Parámetros muestrales
+
+```{r Pregunta2_parametros}
+n <- nrow(datos_multi)
+p <- ncol(datos_multi)
+xbar <- colMeans(datos_multi)
+S <- cov(datos_multi)
+mu0 <- c(mb = 133, bh = 133, bl = 99, nh = 50)
+
+n; p
+xbar
+```
+
+A diferencia de la Pregunta 1, aquí $\Sigma$ no se asume conocida: se utiliza la matriz de covarianza muestral `S` como estimador, lo cual conduce a un estadístico basado en la distribución F en lugar de la Chi-cuadrado.
+
+### 6.4.Cálculo del estadístico $T^2$ (cálculo manual)
+
+```{r Pregunta2_T2_manual}
+T2 <- n * t(xbar - mu0) %*% solve(S) %*% (xbar - mu0)
+Fstat <- ((n - p) / (p * (n - 1))) * T2
+pvalor <- 1 - pf(Fstat, p, n - p)
+
+cat("Estadístico T^2:", T2, "\n")
+cat("Estadístico F equivalente:", Fstat, "\n")
+cat("Grados de libertad: (", p, ",", n - p, ")\n")
+cat("p-valor:", pvalor, "\n")
+
+if (pvalor < 0.05) {
+  cat("Rechazar H0: el vector de medias difiere del vector de referencia.\n")
+} else {
+  cat("No se rechaza H0: no hay evidencia suficiente para afirmar que el vector de medias difiere del vector de referencia.\n")
+}
+```
+
+### 6.5.Verificación con la función `HotellingsT2` (paquete ICSNP)
+
+```{r Pregunta2_T2_ICSNP}
+HotellingsT2(datos_multi, mu = mu0)
+```
+
+### 6.6.Resultados y decisión
+
+**Interpretación:** El estadístico $T^2$ obtenido fue de `r round(T2,3)`, equivalente a un estadístico $F=$ `r round(Fstat,3)` con (`r p`, `r n-p`) grados de libertad y un p-valor de `r format.pval(pvalor, digits = 4)`. `r ifelse(pvalor < 0.05, "Dado que el p-valor es menor que 0.05, se rechaza H0 y se concluye que el vector de medias craneométricas de la población egipcia de la época c. 4000 a.C. difiere significativamente del vector de referencia planteado.", "Dado que el p-valor es mayor que 0.05, no se rechaza H0, no encontrándose evidencia estadísticamente significativa de que el vector de medias craneométricas difiera del vector de referencia planteado.")`
+
+# 7.Regiones de confianza e intervalos simultáneos
+
+### 7.1.Regiones de confianza bivariadas (99%)
+
+```{r Pregunta2_elipses, fig.width=12, fig.height=4}
+tconst <- sqrt((p / n) * ((n - 1) / (n - p)) * qf(0.99, p, n - p))
+
+par(mfrow = c(1, 3))
+
+plot(ellipse::ellipse(x = S[c(1, 2), c(1, 2)], centre = xbar[c(1, 2)], t = tconst),
+     type = "l", xlab = "mb (ancho máximo)", ylab = "bh (altura basibregmática)",
+     col = "tomato", lwd = 3, main = "Región de confianza (99%)")
+points(mu0["mb"], mu0["bh"], pch = 4, col = "black", lwd = 2)
+
+plot(ellipse::ellipse(x = S[c(1, 3), c(1, 3)], centre = xbar[c(1, 3)], t = tconst),
+     type = "l", xlab = "mb (ancho máximo)", ylab = "bl (longitud basialveolar)",
+     col = "green3", lwd = 3, main = "Región de confianza (99%)")
+points(mu0["mb"], mu0["bl"], pch = 4, col = "black", lwd = 2)
+
+plot(ellipse::ellipse(x = S[c(2, 4), c(2, 4)], centre = xbar[c(2, 4)], t = tconst),
+     type = "l", xlab = "bh (altura basibregmática)", ylab = "nh (altura nasal)",
+     col = "darkblue", lwd = 3, main = "Región de confianza (99%)")
+points(mu0["bh"], mu0["nh"], pch = 4, col = "black", lwd = 2)
+
+par(mfrow = c(1, 1))
+```
+
+**Interpretación:** El punto "x" marca el vector de referencia $\mu_0$ en cada par de variables. Si dicho punto cae fuera de la elipse correspondiente, se refuerza visualmente la evidencia de que la media poblacional en ese par de variables difiere del valor de referencia planteado, de forma consistente con el resultado de la prueba $T^2$.
+
+### 7.2.Intervalos de confianza simultáneos
+
+```{r Pregunta2_intervalos}
+T.ci <- function(mu, Sigma, n, avec = rep(1, length(mu)), level = 0.95) {
+  p <- length(mu)
+  cval <- qf(level, p, n - p) * p * (n - 1) / (n - p)
+  zhat <- crossprod(avec, mu)
+  zvar <- crossprod(avec, Sigma %*% avec) / n
+  const <- sqrt(cval * zvar)
+  c(lower = zhat - const, upper = zhat + const)
+}
+
+TCI <- tCI <- bon <- NULL
+alpha_bon <- 1 - 0.05 / (2 * p)
+
+for (k in 1:p) {
+  avec <- rep(0, p)
+  avec[k] <- 1
+
+  TCI <- c(TCI, T.ci(xbar, S, n, avec))
+  tCI <- c(tCI, xbar[k] - sqrt(S[k, k] / n) * qt(0.975, df = n - 1),
+                xbar[k] + sqrt(S[k, k] / n) * qt(0.975, df = n - 1))
+  bon <- c(bon, xbar[k] - sqrt(S[k, k] / n) * qt(alpha_bon, df = n - 1),
+                xbar[k] + sqrt(S[k, k] / n) * qt(alpha_bon, df = n - 1))
+}
+
+tabla_intervalos <- rbind(TCI, tCI, bon)
+rownames(tabla_intervalos) <- c("Simultáneo_T2", "Clásico_t", "Bonferroni")
+colnames(tabla_intervalos) <- c("mb_Inf", "mb_Sup", "bh_Inf", "bh_Sup",
+                                 "bl_Inf", "bl_Sup", "nh_Inf", "nh_Sup")
+
+tt(as.data.frame(round(tabla_intervalos, 2)))
+```
+
+**Interpretación:** Se comparan tres formas de construir intervalos para cada media: el intervalo simultáneo basado en $T^2$ (más conservador, apropiado cuando se evalúan las cuatro variables en conjunto), el intervalo clásico t de Student (válido únicamente para comparaciones individuales) y el ajuste de Bonferroni. Para cada variable puede verificarse si el valor de referencia correspondiente en $\mu_0$ queda dentro o fuera del intervalo simultáneo, lo cual es coherente con la decisión global tomada en la prueba $T^2$.
+
+# 8.Discusión
+
+El análisis exploratorio mostró que las cuatro medidas craneométricas de los cráneos egipcios de la época c. 4000 a.C. presentan distribuciones aproximadamente simétricas, sin valores atípicos multivariados relevantes, y con correlaciones positivas moderadas entre sí, lo cual respalda el uso de un enfoque multivariado en lugar de contrastes univariados independientes. A diferencia de la Pregunta 1, en este caso la matriz de varianza-covarianza no se asumió conocida, por lo que se empleó la prueba $T^2$ de Hotelling basada en la distribución F, estimando $\Sigma$ directamente a partir de la muestra. Los resultados de la prueba, complementados con las regiones de confianza bivariadas y los intervalos simultáneos, permiten evaluar de manera consistente si la conformación craneal de esta población antigua se ajusta al vector de referencia planteado.
+
+# 9.Conclusiones
+
+**1. Sobre el objetivo principal**
+
+La prueba $T^2$ de Hotelling con matriz de covarianza desconocida permitió contrastar simultáneamente las cuatro medidas craneométricas, evitando inflar el error de tipo I que resultaría de realizar pruebas t individuales por separado.
+
+**2. Sobre la normalidad multivariada**
+
+La prueba de Shapiro-Wilk multivariada arrojó un p-valor de `r round(sp_valor,4)`, `r ifelse(sp_valor > 0.05, "por lo que no se rechaza el supuesto de normalidad multivariada, respaldando la validez del procedimiento aplicado.", "por lo que el supuesto de normalidad multivariada no se cumple estrictamente; sin embargo, dado el tamaño de muestra y el respaldo de las pruebas complementarias, el procedimiento se mantiene como una aproximación razonable.")`
+
+**3. Sobre el vector de medias**
+
+La prueba $T^2$ de Hotelling obtuvo un estadístico de `r round(T2,3)` (F = `r round(Fstat,3)`; p-valor = `r format.pval(pvalor, digits = 4)`). `r ifelse(pvalor < 0.05, "Se rechaza H0 y se concluye que el vector de medias craneométricas de la población más antigua difiere significativamente del vector de referencia planteado.", "No se rechaza H0, no existiendo evidencia suficiente para concluir que el vector de medias craneométricas difiera del vector de referencia planteado.")`
+
+**4. Sobre la relación entre las variables**
+
+Se encontró una asociación positiva moderada entre las medidas craneométricas, lo cual es consistente con la naturaleza anatómica conjunta de estas variables y justifica el tratamiento multivariado del problema.
+
+**5. Sobre las regiones e intervalos de confianza**
+
+Las regiones de confianza bivariadas y los intervalos simultáneos permitieron identificar, de manera visual y numérica, en qué variables específicas se concentran las diferencias respecto al vector de referencia, complementando la conclusión global obtenida con la prueba $T^2$.
+
+# PROBLEMA 3
+
+```{r P3_setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 9,
+  fig.height = 6
+)
+
+library(tidyverse)
+library(readxl)
+library(GGally)
+library(mvnormtest)
+library(MVN)
+library(MVTests)
+library(ICSNP)
+library(knitr)
+library(tinytable)
+
+alpha <- 0.05
+```
+
+# Introducción
+
+Se estudió el efecto de un **bioestimulante foliar** sobre el desarrollo de plantas de tomate cultivadas en condiciones controladas. Se seleccionaron **15 plantas** y cada una fue evaluada en dos momentos: **antes** y **después** de la aplicación del bioestimulante.
+
+En cada planta se registraron simultáneamente cuatro variables agronómicas:
+
+- **Altura de la planta (cm)**.
+- **SPAD**, como indicador relativo del contenido de clorofila.
+- **Número de flores**.
+- **Área foliar (cm²)**.
+
+El diseño corresponde a **dos muestras dependientes**, porque las observaciones de ambos momentos provienen de las **mismas 15 plantas**. Por tanto, cada medición posterior está emparejada con su correspondiente medición inicial.
+
+El objetivo principal es determinar si la aplicación del bioestimulante produce un **cambio conjunto en el vector de medias** de las cuatro variables agronómicas. El análisis inferencial se realizará mediante la prueba \(T^2\) de Hotelling para muestras dependientes.
+
+## Base de datos
+
+Los datos se almacenan en el archivo **`Ejemplo3_PC1TM.xlsx`**, en la hoja **`Ejemplo 3`**.  
+Cada planta aparece dos veces: una medición **Antes** y otra **Despues** de la aplicación del bioestimulante.
+
+```{r P3_datos}
+datos <- readxl::read_excel(
+  path = "Ejemplo3_PC1TM.xlsx",
+  sheet = "Ejemplo 3"
+)
+
+datos$Momento <- factor(
+  datos$Momento,
+  levels = c("Antes", "Despues")
+)
+
+tt(head(datos, 10))
+```
+
+# Análisis descriptivo
+
+Antes de realizar la inferencia multivariada se examinan las medidas descriptivas y el comportamiento gráfico de las cuatro variables. Esta etapa permite conocer la magnitud y dirección aparente de los cambios.
+
+## Medidas descriptivas por momento
+
+```{r P3_descriptivos}
+descriptivos <- datos %>%
+  tidyr::pivot_longer(
+    cols = c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+    names_to = "Variable",
+    values_to = "Valor"
+  ) %>%
+  dplyr::group_by(Momento, Variable) %>%
+  dplyr::summarise(
+    n = sum(!is.na(Valor)),
+    Media = mean(Valor, na.rm = TRUE),
+    DE = sd(Valor, na.rm = TRUE),
+    Mediana = median(Valor, na.rm = TRUE),
+    Min = min(Valor, na.rm = TRUE),
+    Max = max(Valor, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(Variable, Momento)
+
+knitr::kable(
+  descriptivos,
+  digits = 2,
+  caption = "Estadísticos descriptivos por variable y momento",
+  align = c("l", "l", "c", "r", "r", "r", "r", "r")
+)
+```
+
+Para facilitar la comparación directa de las medias:
+
+```{r P3_tabla-medias}
+medias_momento <- datos %>%
+  dplyr::group_by(Momento) %>%
+  dplyr::summarise(
+    dplyr::across(
+      c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+      ~mean(.x, na.rm = TRUE)
+    ),
+    .groups = "drop"
+  )
+
+knitr::kable(medias_momento, digits = 2, caption = "Medias de las variables según momento")
+```
+
+Descriptivamente, después de aplicar el bioestimulante se observa un incremento promedio en las cuatro variables. La altura pasa aproximadamente de **51.97 cm a 58.12 cm**, el índice SPAD de **34.10 a 38.05**, el número de flores de **8.07 a 9.93** y el área foliar de **424.25 cm² a 475.79 cm²**. Estos resultados describen una tendencia favorable, pero todavía no permiten afirmar que el cambio conjunto sea estadísticamente significativo.
+
+## Distribución antes y después
+
+```{r P3_datos-largos}
+datos_largos <- datos %>%
+  tidyr::pivot_longer(
+    cols = c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+    names_to = "Variable",
+    values_to = "Valor"
+  )
+datos_largos
+```
+
+```{r P3_boxplots}
+ggplot(datos_largos, aes(x = Momento, y = Valor, fill = Momento)) +
+  geom_boxplot(alpha = 0.70) +
+  facet_wrap(~Variable, scales = "free_y", ncol = 2) +
+  labs(
+    title = "Distribución de las variables antes y después del bioestimulante",
+    x = "Momento de evaluación",
+    y = "Valor observado"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+En el grafico, las distribuciones posteriores se encuentran, en general, desplazadas hacia valores mayores. El incremento visual es especialmente claro en **altura, SPAD y área foliar**. No obstante, los boxplots muestran grupos de mediciones y no aprovechan directamente el emparejamiento de las plantas.
+
+## Cambios individuales de las plantas
+
+```{r P3_grafico-pareado}
+ggplot(
+  datos_largos,
+  aes(x = Momento, y = Valor, group = Planta)
+) +
+  geom_line(alpha = 0.50) +
+  geom_point(size = 2) +
+  facet_wrap(~Variable, scales = "free_y", ncol = 2) +
+  labs(
+    title = "Cambios individuales de las mismas plantas",
+    subtitle = "Cada línea corresponde a una planta",
+    x = "Momento de evaluación",
+    y = "Valor observado"
+  ) +
+  theme_minimal()
+```
+
+Como se puede observar en el grafico, la mayoría de las líneas presentan una trayectoria ascendente entre la evaluación inicial y final. Este gráfico evidencia la naturaleza **pareada** del diseño: cada planta funciona como su propio punto de comparación y el patrón de incremento es relativamente consistente en las cuatro respuestas.
+
+# Desarrollo del análisis multivariado
+
+## Construcción de las muestras dependientes
+
+Para una prueba multivariada pareada se forman dos matrices con el mismo orden de plantas. Posteriormente se calcula una única matriz de diferencias:
+
+\[
+\mathbf{D}_i=\mathbf{X}_{i,\text{Después}}-\mathbf{X}_{i,\text{Antes}}.
+\]
+
+```{r P3_matrices}
+m1 <- datos %>%
+  dplyr::filter(Momento == "Antes") %>%
+  dplyr::arrange(Planta) %>%
+  dplyr::select(Altura_cm, SPAD, Flores, Area_foliar_cm2) %>%
+  as.matrix()
+
+m2 <- datos %>%
+  dplyr::filter(Momento == "Despues") %>%
+  dplyr::arrange(Planta) %>%
+  dplyr::select(Altura_cm, SPAD, Flores, Area_foliar_cm2) %>%
+  as.matrix()
+
+X <- m2 - m1
+xbar <- colMeans(X)
+
+knitr::kable(
+  data.frame(Variable = colnames(X), Media_diferencia = xbar),
+  digits = 3,
+  caption = "Vector de medias de las diferencias (Después - Antes)"
+)
+```
+
+Como las diferencias se definieron como **Después - Antes**, los valores positivos representan incrementos posteriores al tratamiento. Las cuatro diferencias promedio son positivas.
+
+## Distribución de las diferencias
+
+```{r P3_diferencias-largo}
+dif_largo <- as.data.frame(X) %>%
+  dplyr::mutate(Planta = 1:dplyr::n()) %>%
+  tidyr::pivot_longer(
+    cols = -Planta,
+    names_to = "Variable",
+    values_to = "Diferencia"
+  )
+```
+
+```{r P3_histogramas-diferencias}
+ggplot(dif_largo, aes(x = Diferencia)) +
+  geom_histogram(bins = 7, color = "white") +
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~Variable, scales = "free", ncol = 2) +
+  labs(
+    title = "Distribución de las diferencias: Después - Antes",
+    subtitle = "La línea vertical representa ausencia de cambio",
+    x = "Diferencia",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+Se puede deducir que en el grafico las diferencias se concentran principalmente en valores positivos. Esto indica que el incremento observado en las medias no se debe únicamente a unas pocas plantas, sino que aparece de forma relativamente general en la muestra.
+
+## Relaciones entre las diferencias
+
+```{r P3_ggpairs, fig.width=10, fig.height=9}
+GGally::ggpairs(
+  as.data.frame(X),
+  title = "Relaciones entre las diferencias de las variables"
+)
+```
+
+Sobre el grafico podemos afirmar que las variables no deben analizarse como si fueran completamente aisladas. Existen asociaciones entre algunas de las diferencias, lo cual justifica utilizar una metodología multivariada que incorpore la matriz de varianzas y covarianzas en lugar de efectuar únicamente pruebas univariadas separadas.
+
+# Diagnóstico de valores atípicos multivariados
+
+La presencia de una observación extremadamente alejada puede influir sobre el vector de medias y, especialmente, sobre la matriz de covarianzas. Por ello se revisan los vectores de diferencias antes de aplicar la prueba de Hotelling.
+
+## Métodos robustos con `MVN`
+
+```{r P3_outliers}
+outliers_quan <- MVN::mvn(
+  data = as.data.frame(X),
+  multivariate_outlier_method = "quan"
+)
+
+outliers_adj <- MVN::mvn(
+  data = as.data.frame(X),
+  multivariate_outlier_method = "adj",
+  alpha = alpha
+)
+
+outliers_quan$multivariate_outliers
+outliers_adj$multivariate_outliers
+```
+
+Estos procedimientos son diagnósticos y no constituyen una prueba para eliminar observaciones automáticamente. Una planta señalada como atípica debería revisarse primero para determinar si corresponde a un error de medición o a una observación biológicamente válida.
+
+## Distancia de Mahalanobis
+
+```{r P3_mahalanobis}
+centro <- colMeans(X)
+S <- cov(X)
+
+dist_mahal <- mahalanobis(X, center = centro, cov = S)
+corte_mahal <- qchisq(0.975, df = ncol(X))
+
+tabla_mahal <- data.frame(
+  Planta = 1:nrow(X),
+  Distancia_Mahalanobis = dist_mahal,
+  Atipico = dist_mahal > corte_mahal
+)
+
+knitr::kable(tabla_mahal, digits = 3, caption = "Distancias de Mahalanobis")
+```
+
+```{r P3_grafico-mahalanobis}
+ggplot(tabla_mahal, aes(x = Planta, y = Distancia_Mahalanobis)) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = corte_mahal, linetype = "dashed") +
+  labs(
+    title = "Distancias de Mahalanobis de los vectores de diferencias",
+    subtitle = "La línea horizontal representa el punto de corte exploratorio",
+    x = "Planta",
+    y = expression(D^2)
+  ) +
+  theme_minimal()
+```
+
+Del grafico,ninguna planta supera el punto de corte clásico basado en \(\chi^2\) al 97.5%. No se observa evidencia gráfica de un vector de diferencias extremadamente alejado respecto al comportamiento multivariado general.
+
+# Supuesto de normalidad multivariada
+
+La prueba \(T^2\) de Hotelling para muestras dependientes se aplica sobre los **vectores de diferencias**, por lo que el supuesto relevante es la normalidad multivariada de \(X=\text{Después}-\text{Antes}\).
+
+## Hipótesis
+
+\[
+H_0:\text{Los vectores de diferencias siguen una distribución normal multivariada.}
+\]
+
+\[
+H_1:\text{Los vectores de diferencias no siguen una distribución normal multivariada.}
+\]
+
+## Nivel de significancia
+
+Se utiliza:
+
+\[
+\alpha=0.05.
+\]
+
+## Pruebas estadísticas
+
+### Shapiro-Wilk multivariado
+
+```{r P3_shapiro-multivariado}
+normalidad_shapiro <- mvnormtest::mshapiro.test(t(X))
+normalidad_shapiro
+```
+
+```{r P3_decision-shapiro, echo=FALSE}
+p_shapiro <- normalidad_shapiro$p.value
+decision_shapiro <- ifelse(
+  p_shapiro > alpha,
+  "No se rechaza H0",
+  "Se rechaza H0"
+)
+
+tabla_shapiro <- data.frame(
+  Prueba = "Shapiro-Wilk multivariado",
+  Estadistico = unname(normalidad_shapiro$statistic),
+  p_valor = p_shapiro,
+  Decision = decision_shapiro
+)
+
+knitr::kable(tabla_shapiro, digits = 5)
+```
+
+**Decisión estadística.** La decisión se obtiene comparando el p-valor con \(\alpha=0.05\). Si \(p>0.05\), no se rechaza \(H_0\); si \(p\leq0.05\), se rechaza \(H_0\).
+
+**Conclusión estadística.** De acuerdo con el resultado mostrado, se determina si existe o no evidencia suficiente para considerar que los vectores de diferencias se apartan de la normalidad multivariada.
+
+### Pruebas complementarias de normalidad multivariada
+
+Se utilizan adicionalmente Royston, Mardia, Henze-Zirkler, Doornik-Hansen y Energy. Todas contrastan, mediante criterios distintos, la misma hipótesis general de normalidad multivariada.
+
+```{r P3_normalidad-complementaria}
+royston <- MVN::mvn(as.data.frame(X), mvn_test = "royston")
+mardia  <- MVN::mvn(as.data.frame(X), mvn_test = "mardia")
+hz      <- MVN::mvn(as.data.frame(X), mvn_test = "hz")
+dh      <- MVN::mvn(as.data.frame(X), mvn_test = "doornik_hansen")
+energy  <- MVN::mvn(as.data.frame(X), mvn_test = "energy")
+
+extraer_mvn <- function(objeto) {
+  resultado <- objeto$multivariate_normality
+
+  # Algunas pruebas de MVN devuelven p-valores numéricos y otras
+  # pueden devolver textos como "<0.001". Para evitar errores al
+  # combinar tablas, primero conservamos el texto original y luego
+  # construimos una versión numérica solo para tomar la decisión.
+  p_texto <- as.character(resultado$p.value)
+  p_numerico <- suppressWarnings(as.numeric(gsub("<", "", p_texto)))
+
+  # Si el p-valor viene como "<0.001", usamos 0.001 como referencia
+  # numérica conservadora para la regla de decisión.
+  es_menor_que <- grepl("^<", p_texto)
+  p_numerico[es_menor_que & !is.na(p_numerico)] <- p_numerico[es_menor_que & !is.na(p_numerico)]
+
+  data.frame(
+    Prueba = as.character(resultado$Test),
+    Estadistico = as.character(resultado$Statistic),
+    p_valor = p_texto,
+    p_num = p_numerico,
+    stringsAsFactors = FALSE
+  )
+}
+
+tabla_normalidad <- dplyr::bind_rows(
+  extraer_mvn(royston),
+  extraer_mvn(mardia),
+  extraer_mvn(hz),
+  extraer_mvn(dh),
+  extraer_mvn(energy)
+) %>%
+  dplyr::mutate(
+    Decision = dplyr::case_when(
+      !is.na(p_num) & p_num > alpha ~ "No se rechaza H0",
+      !is.na(p_num) & p_num <= alpha ~ "Se rechaza H0",
+      TRUE ~ "Revisar salida de la prueba"
+    )
+  ) %>%
+  dplyr::select(Prueba, Estadistico, p_valor, Decision)
+
+knitr::kable(
+  tabla_normalidad,
+  caption = "Pruebas complementarias de normalidad multivariada"
+)
+```
+
+**Prueba estadística y p-valores.** La tabla presenta el estadístico y el p-valor de cada procedimiento. En la prueba de Mardia deben interpretarse conjuntamente sus componentes de asimetría y curtosis.
+
+**Decisión estadística.** Para cada prueba, \(p>0.05\) conduce a no rechazar \(H_0\), mientras que \(p\leq0.05\) conduce a rechazarla.
+
+**Conclusión estadística.** La normalidad multivariada se evalúa considerando el conjunto de evidencias. No es necesario que cumpla el criterio de normalidad en todas las pruebas, ya que cada prueba utiliza un criterio diferente.
+
+# Prueba \(T^2\) de Hotelling para muestras dependientes
+
+La inferencia principal busca establecer si el vector de medias de las cuatro características agronómicas cambió después de la aplicación del bioestimulante.
+
+Sea:
+
+\[
+\boldsymbol{\mu}_D =
+\boldsymbol{\mu}_{Después}-
+\boldsymbol{\mu}_{Antes}.
+\]
+
+## Hipótesis
+
+\[
+H_0:
+\boldsymbol{\mu}_D=
+\begin{bmatrix}
+0\\
+0\\
+0\\
+0
+\end{bmatrix}
+\]
+
+frente a:
+
+\[
+H_1:
+\boldsymbol{\mu}_D\neq
+\begin{bmatrix}
+0\\
+0\\
+0\\
+0
+\end{bmatrix}.
+\]
+
+Equivalentemente:
+
+\[
+H_0:\boldsymbol{\mu}_{Después}=\boldsymbol{\mu}_{Antes}
+\]
+
+\[
+H_1:\boldsymbol{\mu}_{Después}\neq\boldsymbol{\mu}_{Antes}.
+\]
+
+La hipótesis alternativa indica una **diferencia multivariada global**; no implica por sí sola que cada una de las cuatro variables sea individualmente significativa.
+
+## Nivel de significancia
+
+\[
+\alpha=0.05.
+\]
+
+## Prueba con `Mpaired()`
+
+```{r P3_mpaired}
+resultado_pareado <- MVTests::Mpaired(T1 = m2, T2 = m1)
+summary(resultado_pareado)
+```
+
+Esta función realiza directamente la comparación multivariada pareada entre las mediciones posteriores y anteriores.
+
+## Prueba con `HotellingsT2()`
+
+Como \(X\) ya contiene los vectores de diferencias, la prueba se puede expresar como una prueba \(T^2\) de una muestra contra el vector cero.
+
+```{r P3_hotelling-icsnp}
+resultado_hotelling <- ICSNP::HotellingsT2(X)
+resultado_hotelling
+```
+
+## Cálculo de \(T^2\), transformación a \(F\) y p-valor
+
+La estadística utilizada es:
+
+\[
+T^2=n(\bar{\mathbf D}-\boldsymbol{\mu}_0)'
+S_D^{-1}
+(\bar{\mathbf D}-\boldsymbol{\mu}_0),
+\]
+
+donde \(\boldsymbol{\mu}_0=\mathbf 0\).
+
+```{r P3_calculo-hotelling}
+n <- nrow(X)
+p <- ncol(X)
+S <- cov(X)
+mu0 <- rep(0, p)
+
+T2 <- as.numeric(
+  n * t(xbar - mu0) %*% solve(S) %*% (xbar - mu0)
+)
+
+F_calculado <- ((n - p) / (p * (n - 1))) * T2
+gl1 <- p
+gl2 <- n - p
+p_valor_hotelling <- pf(F_calculado, gl1, gl2, lower.tail = FALSE)
+
+tabla_hotelling <- data.frame(
+  T2 = T2,
+  F = F_calculado,
+  gl1 = gl1,
+  gl2 = gl2,
+  p_valor = p_valor_hotelling
+)
+
+knitr::kable(
+  tabla_hotelling,
+  digits = 6,
+  caption = "Resultados de la prueba T² de Hotelling"
+)
+```
+
+## Decisión estadística
+
+```{r P3_decision-hotelling, echo=FALSE}
+decision_hotelling <- ifelse(
+  p_valor_hotelling < alpha,
+  "Se rechaza H0",
+  "No se rechaza H0"
+)
+
+cat("Decisión:", decision_hotelling)
+```
+
+Como el p-valor obtenido es considerablemente menor que \(0.05\), **se rechaza la hipótesis nula**.
+
+## Conclusión de la prueba
+
+Existe evidencia estadísticamente significativa de que el **vector conjunto de medias** de altura, SPAD, número de flores y área foliar después de la aplicación del bioestimulante es diferente del vector correspondiente antes de su aplicación.
+
+Con esta base se obtiene aproximadamente:
+
+\[
+T^2=656.574,\qquad
+F_{4,11}=128.970,\qquad
+p<0.001.
+\]
+
+Por tanto, el cambio observado no puede explicarse razonablemente como una simple variación muestral bajo la hipótesis de ausencia de efecto multivariado.
+
+# Magnitud y dirección descriptiva de los cambios
+
+La prueba de Hotelling establece la existencia de una diferencia global. Para interpretar la dirección del cambio se examina el vector de medias de las diferencias.
+
+```{r P3_direccion-cambios}
+interpretacion <- data.frame(
+  Variable = colnames(X),
+  Media_Diferencia = xbar,
+  Direccion = ifelse(
+    xbar > 0,
+    "Incremento",
+    ifelse(xbar < 0, "Disminución", "Sin cambio promedio")
+  )
+)
+
+knitr::kable(
+  interpretacion,
+  digits = 3,
+  caption = "Dirección descriptiva de los cambios"
+)
+```
+
+El patrón es coherente: las cuatro diferencias promedio son positivas. En términos descriptivos, después de aplicar el bioestimulante se observó un incremento promedio aproximado de **6.15 cm en altura**, **3.95 unidades SPAD**, **1.87 flores** y **51.55 cm² de área foliar**.
+
+# Discusión de resultados
+
+El análisis descriptivo mostró desde el inicio una tendencia favorable después de la aplicación del bioestimulante. Los boxplots evidenciaron un desplazamiento general hacia valores superiores y el gráfico pareado mostró que los cambios positivos se presentaron en una proporción importante de las mismas plantas.
+
+La construcción de la matriz \(X=\text{Después}-\text{Antes}\) permitió aprovechar correctamente la dependencia entre las mediciones. Este aspecto es fundamental: no se compararon dos grupos independientes de plantas, sino el cambio ocurrido dentro de cada individuo.
+
+La revisión de las distancias de Mahalanobis no mostró observaciones que superaran el punto de corte clásico utilizado como referencia exploratoria. Esto reduce la preocupación de que el resultado multivariado esté siendo determinado por una única planta extremadamente alejada.
+
+La normalidad multivariada debe juzgarse a partir de las pruebas presentadas sobre la matriz de diferencias. Este supuesto es relevante porque la distribución de referencia de la \(T^2\) de Hotelling depende de la aproximación normal multivariada de los vectores de diferencias.
+
+La prueba principal produjo un valor de \(T^2\) muy elevado y un p-valor muy inferior a 0.05. En consecuencia, existe evidencia clara de que el perfil agronómico conjunto cambió después de la aplicación del bioestimulante.
+
+Sin embargo, la conclusión de Hotelling es **global**. El rechazo de \(H_0\) demuestra que el vector conjunto de medias cambió, pero no constituye por sí solo una prueba de significancia individual para cada variable. Las medias de las diferencias permiten describir la dirección del cambio y muestran incrementos en las cuatro respuestas; si el objetivo fuera identificar formalmente cuáles variables contribuyen de manera individual al efecto, sería necesario realizar análisis posteriores con un control apropiado de comparaciones múltiples.
+
+# Conclusiones
+
+- **El bioestimulante produjo un cambio global en el perfil agronómico de las plantas.** La prueba \(T^2\) de Hotelling para muestras dependientes rechazó la hipótesis nula de igualdad entre los vectores de medias antes y después de la aplicación, con \(T^2\approx656.574\), \(F_{4,11}\approx128.970\) y \(p<0.001\). Por tanto, existe evidencia estadística de que, consideradas en conjunto, las cuatro variables agronómicas cambiaron después del tratamiento.
+
+- **La dirección descriptiva del cambio fue favorable en las cuatro respuestas estudiadas.** Las diferencias promedio \((Después-Antes)\) fueron positivas: aproximadamente **+6.15 cm** en altura, **+3.95 unidades SPAD**, **+1.87 flores** y **+51.55 cm²** de área foliar. Los gráficos descriptivos y pareados también muestran que este patrón de incremento se presenta en una parte importante de las plantas y no únicamente en los promedios generales.
+
+- **Los diagnósticos previos respaldan la aplicación del análisis multivariado.** La evaluación de valores atípicos mediante distancia de Mahalanobis no mostró plantas extremadamente alejadas bajo el criterio exploratorio utilizado, y la normalidad multivariada fue evaluada sobre la matriz de diferencias, que es la estructura pertinente en un diseño pareado. Estos diagnósticos permiten interpretar la prueba de Hotelling dentro de los supuestos considerados en el análisis.
+
+- **La inferencia obtenida es multivariada y debe interpretarse de manera global.** El rechazo de \(H_0\) indica que el vector conjunto de medias cambió, pero no demuestra por sí solo que cada variable sea individualmente significativa. Las medias permiten describir en qué dirección cambiaron altura, SPAD, flores y área foliar; para identificar formalmente cuáles variables explican la diferencia global sería necesario realizar análisis complementarios con un control adecuado de comparaciones múltiples.
+
+# PROBLEMA 4
+
+```{r P4_setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5
+)
+
+alpha <- 0.05
+
+library(tidyverse)
+library(readxl)
+library(GGally)
+library(rstatix)
+library(mvnormtest)
+library(MVTests)
+library(ICSNP)
+library(Hotelling)
+library(heplots)
+library(rrcov)
+library(ergm)
+library(knitr)
+```
+
+# Introducción
+
+Se desea comparar el perfil económico promedio de pequeñas empresas pertenecientes a dos sectores distintos: **restaurantes** y **tiendas minoristas**.
+
+En cada empresa se registran dos variables cuantitativas:
+
+- **Utilidad:** utilidad mensual de la empresa, expresada en miles de soles.
+- **Crecimiento:** crecimiento porcentual de las ventas durante el último año.
+
+Cada empresa se representa mediante el vector:
+
+\[
+\mathbf{X}=
+\begin{pmatrix}
+\text{Utilidad}\\
+\text{Crecimiento}
+\end{pmatrix}.
+\]
+
+Se consideran 20 restaurantes y 20 tiendas. Las muestras son **independientes** porque las empresas de un sector son distintas de las del otro y no existe emparejamiento entre observaciones.
+
+El objetivo del análisis es determinar si los dos sectores presentan el mismo vector de medias poblacional:
+
+\[
+H_0:\boldsymbol{\mu}_{R}=\boldsymbol{\mu}_{T}
+\]
+
+frente a:
+
+\[
+H_1:\boldsymbol{\mu}_{R}\neq\boldsymbol{\mu}_{T}.
+\]
+
+Los datos son simulados con fines didácticos y se encuentran almacenados en el archivo **Ejemplo4_PC1TM.xlsx**, en la hoja **Datos**.
+
+```{r P4_datos}
+datos <- read_excel(
+  "Ejemplo4_PC1TM.xlsx",
+  sheet = "Datos"
+)
+
+datos$Sector <- as.factor(datos$Sector)
+
+head(datos)
+str(datos)
+```
+
+# Análisis descriptivo
+
+## Estadísticas descriptivas por sector
+
+```{r P4_descriptivos, class.source='fold-hide'}
+descriptivos <- datos %>%
+  dplyr::group_by(Sector) %>%
+  dplyr::summarise(
+    n = dplyr::n(),
+    media_utilidad = mean(Utilidad),
+    sd_utilidad = sd(Utilidad),
+    mediana_utilidad = median(Utilidad),
+    min_utilidad = min(Utilidad),
+    max_utilidad = max(Utilidad),
+    media_crecimiento = mean(Crecimiento),
+    sd_crecimiento = sd(Crecimiento),
+    mediana_crecimiento = median(Crecimiento),
+    min_crecimiento = min(Crecimiento),
+    max_crecimiento = max(Crecimiento),
+    .groups = "drop"
+  )
+
+descriptivos_vertical <- descriptivos %>%
+  tidyr::pivot_longer(
+    cols = -Sector,
+    names_to = "Estadístico",
+    values_to = "Valor"
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = Sector,
+    values_from = Valor
+  ) %>%
+  dplyr::mutate(
+    Estadístico = dplyr::recode(
+      Estadístico,
+      n = "Número de empresas",
+      media_utilidad = "Media de utilidad",
+      sd_utilidad = "Desv. estándar de utilidad",
+      mediana_utilidad = "Mediana de utilidad",
+      min_utilidad = "Mínimo de utilidad",
+      max_utilidad = "Máximo de utilidad",
+      media_crecimiento = "Media de crecimiento",
+      sd_crecimiento = "Desv. estándar de crecimiento",
+      mediana_crecimiento = "Mediana de crecimiento",
+      min_crecimiento = "Mínimo de crecimiento",
+      max_crecimiento = "Máximo de crecimiento"
+    )
+  )
+
+kable(
+  descriptivos_vertical,
+  digits = 2,
+  caption = "Estadísticas descriptivas por sector"
+)
+```
+
+Los restaurantes presentan una utilidad media de `r round(descriptivos$media_utilidad[descriptivos$Sector=="Restaurante"],2)` miles de soles, mientras que las tiendas presentan una utilidad media de `r round(descriptivos$media_utilidad[descriptivos$Sector=="Tienda"],2)` miles de soles.
+
+En crecimiento anual se observa el patrón contrario: los restaurantes presentan una media de `r round(descriptivos$media_crecimiento[descriptivos$Sector=="Restaurante"],2)`%, mientras que las tiendas alcanzan `r round(descriptivos$media_crecimiento[descriptivos$Sector=="Tienda"],2)`%.
+
+## Correlaciones por sector
+
+```{r P4_correlaciones}
+correlaciones <- datos %>%
+  dplyr::group_by(Sector) %>%
+  dplyr::summarise(
+    correlacion = cor(Utilidad, Crecimiento),
+    .groups = "drop"
+  )
+
+kable(correlaciones, digits = 3,
+      caption = "Correlación entre utilidad y crecimiento")
+```
+
+La correlación permite observar qué tan relacionadas están la utilidad y el crecimiento dentro de cada sector. Esta relación es importante porque el análisis multivariado toma en cuenta la asociación entre las variables.
+
+## Boxplot de utilidad
+
+```{r P4_box-utilidad, class.source='fold-hide'}
+comparaciones <- list(c("Restaurante", "Tienda"))
+
+ggplot(data = datos, aes(x = Sector, y = Utilidad)) +
+  geom_boxplot(fill = c("#E6E6FA", "#FFE4B5")) +
+  labs(
+    x = "Sector",
+    y = "Utilidad mensual (miles de soles)",
+    title = "Utilidad mensual de pequeñas empresas"
+  ) +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Los restaurantes presentan niveles de utilidad claramente superiores a los de las tiendas. Sin embargo, esta diferencia gráfica es descriptiva y todavía no constituye una conclusión inferencial.
+
+## Boxplot de crecimiento
+
+```{r P4_box-crecimiento, class.source='fold-hide'}
+ggplot(data = datos, aes(x = Sector, y = Crecimiento)) +
+  geom_boxplot(fill = c("#E6E6FA", "#FFE4B5")) +
+  labs(
+    x = "Sector",
+    y = "Crecimiento anual (%)",
+    title = "Crecimiento anual de pequeñas empresas"
+  ) +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Las tiendas muestran valores de crecimiento mayores que los restaurantes, revelando un patrón opuesto al observado en la utilidad.
+
+## Diagrama de dispersión
+
+```{r P4_dispersion, class.source='fold-hide'}
+ggplot(datos, aes(x = Utilidad, y = Crecimiento, color = Sector)) +
+  geom_point(size = 3) +
+  xlab("Utilidad mensual (miles de soles)") +
+  ylab("Crecimiento anual (%)") +
+  labs(title = "Utilidad y crecimiento según sector") +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Los grupos ocupan zonas distintas del plano: los restaurantes se concentran en mayor utilidad y menor crecimiento, mientras que las tiendas presentan menor utilidad y mayor crecimiento. Esto sugiere que la comparación conjunta de ambas variables es pertinente.
+
+# Desarrollo del análisis multivariado
+
+## Formación de las dos muestras
+
+Para realizar el análisis multivariado se separan los datos en dos matrices, una para cada sector:
+
+- \(X\): empresas del sector restaurantes.
+- \(Y\): empresas del sector tiendas.
+
+```{r P4_matrices}
+X <- filter(datos, Sector == "Restaurante")[, 2:3]
+Y <- filter(datos, Sector == "Tienda")[, 2:3]
+
+X
+Y
+```
+
+Los vectores de medias muestrales son:
+
+```{r P4_medias}
+colMeans(X)
+colMeans(Y)
+```
+
+Y las matrices de varianzas-covarianzas muestrales:
+
+```{r P4_covarianzas}
+var(X)
+var(Y)
+```
+
+Estas matrices muestran la variabilidad de cada variable y también la covarianza entre utilidad y crecimiento en cada sector.
+
+## Normalidad multivariada
+
+La prueba \(T^2\) de Hotelling parte del supuesto de normalidad multivariada en cada grupo.
+
+### Hipótesis
+
+Para restaurantes:
+
+\[
+H_0:\text{Utilidad y Crecimiento siguen una distribución normal bivariada}
+\]
+
+\[
+H_1:\text{Utilidad y Crecimiento no siguen una distribución normal bivariada}
+\]
+
+Para tiendas se plantean las mismas hipótesis.
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba estadística
+
+Se aplica `mshapiro.test()` a cada matriz transpuesta para evaluar la normalidad multivariada en ambos sectores.
+
+```{r P4_normalidad}
+normalidad_rest <- mshapiro.test(t(X))
+normalidad_tienda <- mshapiro.test(t(Y))
+
+normalidad_rest
+normalidad_tienda
+```
+
+```{r P4_p-normalidad, include=FALSE}
+p_norm_rest <- normalidad_rest$p.value
+p_norm_tienda <- normalidad_tienda$p.value
+```
+
+### p-valores
+
+- Restaurantes: \(p=\) `r format.pval(p_norm_rest, digits=4)`.
+- Tiendas: \(p=\) `r format.pval(p_norm_tienda, digits=4)`.
+
+### Decisión estadística
+
+Para restaurantes:  
+`r if (p_norm_rest < alpha) "Se rechaza H0." else "No se rechaza H0."`
+
+Para tiendas:  
+`r if (p_norm_tienda < alpha) "Se rechaza H0." else "No se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_norm_rest >= alpha && p_norm_tienda >= alpha) "No existe evidencia suficiente para rechazar el supuesto de normalidad multivariada en ninguno de los dos sectores." else "Al menos uno de los sectores presenta evidencia estadística contra la normalidad multivariada, por lo que este supuesto debe interpretarse con cautela."`
+
+## Homogeneidad de matrices de varianzas-covarianzas
+
+A continuación se evalúa si ambas poblaciones pueden considerarse con la misma matriz de varianzas-covarianzas.
+
+### Hipótesis
+
+\[
+H_0:\Sigma_R=\Sigma_T
+\]
+
+\[
+H_1:\Sigma_R\neq\Sigma_T
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba estadística
+
+Se utiliza la prueba M de Box:
+
+```{r P4_boxm}
+results <- BoxM(data = datos[, 2:3], datos$Sector)
+summary(results)
+```
+
+```{r P4_p-box, include=FALSE}
+p_box <- results$p.value
+```
+
+### p-valor
+
+\[
+p=`r format.pval(p_box, digits=4)`
+\]
+
+### Decisión estadística
+
+`r if (p_box < alpha) "Como p < 0.05, se rechaza H0." else "Como p >= 0.05, no se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_box < alpha) "Existe evidencia estadística de que las matrices de varianzas-covarianzas de restaurantes y tiendas son diferentes." else "No existe evidencia estadística suficiente para afirmar que las matrices de varianzas-covarianzas sean distintas."`
+
+## Comparación de los dos vectores de medias
+
+Se desea contrastar:
+
+### Hipótesis
+
+\[
+H_0:
+\boldsymbol{\mu}_{R}-\boldsymbol{\mu}_{T}
+=
+\begin{pmatrix}
+0\\
+0
+\end{pmatrix}
+\]
+
+\[
+H_1:
+\boldsymbol{\mu}_{R}-\boldsymbol{\mu}_{T}
+\neq
+\begin{pmatrix}
+0\\
+0
+\end{pmatrix}
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+Antes de realizar la prueba principal se crea un vector que identifica a qué sector pertenece cada observación:
+
+```{r P4_grupo}
+G <- c(rep(1, 20), rep(2, 20))
+```
+
+### Prueba con `TwoSamplesHT2`
+
+```{r P4_twosamples, class.source='fold-hide'}
+results1 <- TwoSamplesHT2(
+  data = datos[, 2:3],
+  group = G,
+  alpha = 0.05,
+  Homogenity = TRUE
+)
+
+summary(results1)
+```
+
+Esta prueba permite comparar los dos vectores de medias. Su interpretación debe hacerse considerando previamente el resultado de la prueba M de Box.
+
+## Prueba de Hotelling apropiada según Box M
+
+Cuando no puede asumirse homogeneidad de matrices, se utiliza una aproximación de Hotelling que permite trabajar con matrices de varianzas-covarianzas diferentes:
+
+```{r P4_hotelling-aprox}
+hot_aprox <- approx.hotelling.diff.test(
+  X, Y,
+  mu0 = 0,
+  assume.indep = TRUE,
+  var.equal = FALSE
+)
+
+hot_aprox
+```
+
+```{r P4_p-hotelling, include=FALSE}
+p_hotelling <- hot_aprox$p.value
+```
+
+### Interpretación de los argumentos
+
+- `X, Y`: matrices correspondientes a restaurantes y tiendas.
+- `mu0 = 0`: bajo \(H_0\), la diferencia entre los dos vectores de medias es el vector cero.
+- `assume.indep = TRUE`: las muestras son independientes.
+- `var.equal = FALSE`: no se supone igualdad de matrices de varianzas-covarianzas.
+
+### p-valor
+
+\[
+p=`r format.pval(p_hotelling, digits=5)`
+\]
+
+### Decisión estadística
+
+`r if (p_hotelling < alpha) "Como p < 0.05, se rechaza H0." else "Como p >= 0.05, no se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_hotelling < alpha) "Existe evidencia estadística suficiente para concluir que los restaurantes y las tiendas minoristas presentan diferentes vectores medios de utilidad y crecimiento." else "No existe evidencia estadística suficiente para concluir que los vectores medios de restaurantes y tiendas sean diferentes."`
+
+## Prueba robusta complementaria
+
+Como análisis complementario puede emplearse una prueba robusta de Hotelling para comprobar si la conclusión principal se mantiene.
+
+### Hipótesis
+
+\[
+H_0:\boldsymbol{\mu}_{R}=\boldsymbol{\mu}_{T}
+\]
+
+\[
+H_1:\boldsymbol{\mu}_{R}\neq\boldsymbol{\mu}_{T}
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba
+
+```{r P4_robusta}
+robusta <- T2.test(
+  X,
+  Y,
+  mu = 0,
+  method = "c"
+)
+
+robusta
+```
+
+Esta prueba funciona como evidencia complementaria frente a posibles desviaciones de los supuestos clásicos.
+
+## Prueba T² de Hotelling bajo homogeneidad
+
+Si se pudiera asumir igualdad de matrices de varianzas-covarianzas, se podría aplicar la versión clásica de la prueba \(T^2\) de Hotelling.
+
+```{r P4_hotelling-clasico}
+HotellingsT2(X, Y)
+```
+
+Este procedimiento es adecuado únicamente cuando la homogeneidad de matrices de varianzas-covarianzas puede considerarse razonable.
+
+# Discusión de resultados
+
+El análisis descriptivo indica que los dos sectores presentan perfiles económicos distintos. Los restaurantes muestran una **mayor utilidad mensual promedio**, mientras que las tiendas presentan un **mayor crecimiento anual promedio**.
+
+La representación conjunta mediante el diagrama de dispersión refuerza esta diferencia: ambos grupos se ubican en regiones distintas del plano definido por utilidad y crecimiento. Por ello, resulta apropiado analizar ambas variables de manera simultánea.
+
+La normalidad multivariada se evaluó por separado en los dos sectores mediante la prueba multivariada de Shapiro-Wilk. Además, se utilizó la prueba M de Box para analizar la igualdad de matrices de varianzas-covarianzas, ya que este resultado permite decidir qué versión de la prueba \(T^2\) es más apropiada.
+
+La prueba multivariada principal produce un p-valor de **`r format.pval(p_hotelling, digits=5)`**. Con un nivel de significancia de 5%, `r if (p_hotelling < alpha) "se rechaza la hipótesis nula de igualdad de los vectores de medias." else "no se rechaza la hipótesis nula de igualdad de los vectores de medias."`
+
+Por tanto, `r if (p_hotelling < alpha) "la evidencia estadística indica que el sector económico está asociado con un perfil conjunto diferente de utilidad y crecimiento." else "los datos no permiten concluir que exista una diferencia estadísticamente significativa entre los perfiles conjuntos de ambos sectores."`
+
+Es importante señalar que la prueba multivariada establece una diferencia **conjunta**. La dirección concreta de dicha diferencia se interpreta a partir de las medias: los restaurantes presentan mayor utilidad, mientras que las tiendas muestran mayor crecimiento.
+
+# Conclusiones
+
+1. **Perfil económico diferente.** Los restaurantes presentan una utilidad mensual promedio mayor, mientras que las tiendas minoristas muestran un crecimiento anual promedio superior.
+
+2. **Pertinencia del análisis multivariado.** El análisis conjunto de utilidad y crecimiento es más informativo que estudiar cada variable de manera aislada, porque permite considerar simultáneamente ambas dimensiones y su covariación.
+
+3. **Resultado inferencial principal.** Con \(\alpha=0.05\), la prueba multivariada obtiene un p-valor de `r format.pval(p_hotelling, digits=5)`. `r if (p_hotelling < alpha) "Se rechaza H0 y se concluye que los vectores medios de restaurantes y tiendas son significativamente diferentes." else "No se rechaza H0 y no existe evidencia suficiente para afirmar que los vectores medios sean diferentes."`
+
+4. **Interpretación económica.** `r if (p_hotelling < alpha) "Las diferencias observadas sugieren dos patrones económicos distintos: los restaurantes se caracterizan por mayor utilidad mensual, mientras que las tiendas se caracterizan por mayor crecimiento anual." else "Aunque descriptivamente se observan diferencias, estas no son suficientes para establecer una diferencia multivariada significativa al 5%."`
