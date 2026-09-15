@@ -1,0 +1,610 @@
+---
+title: "Problema3-PC1TecnicasMultivariadas"
+subtitle: "Efecto de un bioestimulante foliar en plantas de tomate"
+author: "Grupo 4"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    code_folding: show
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 9,
+  fig.height = 6
+)
+
+library(tidyverse)
+library(readxl)
+library(GGally)
+library(mvnormtest)
+library(MVN)
+library(MVTests)
+library(ICSNP)
+library(knitr)
+library(tinytable)
+
+alpha <- 0.05
+```
+
+# Introducción
+
+Se estudió el efecto de un **bioestimulante foliar** sobre el desarrollo de plantas de tomate cultivadas en condiciones controladas. Se seleccionaron **15 plantas** y cada una fue evaluada en dos momentos: **antes** y **después** de la aplicación del bioestimulante.
+
+En cada planta se registraron simultáneamente cuatro variables agronómicas:
+
+- **Altura de la planta (cm)**.
+- **SPAD**, como indicador relativo del contenido de clorofila.
+- **Número de flores**.
+- **Área foliar (cm²)**.
+
+El diseño corresponde a **dos muestras dependientes**, porque las observaciones de ambos momentos provienen de las **mismas 15 plantas**. Por tanto, cada medición posterior está emparejada con su correspondiente medición inicial.
+
+El objetivo principal es determinar si la aplicación del bioestimulante produce un **cambio conjunto en el vector de medias** de las cuatro variables agronómicas. El análisis inferencial se realizará mediante la prueba \(T^2\) de Hotelling para muestras dependientes.
+
+## Base de datos
+
+Los datos se almacenan en el archivo **`Ejemplo3_PC1TM.xlsx`**, en la hoja **`Ejemplo 3`**.  
+Cada planta aparece dos veces: una medición **Antes** y otra **Despues** de la aplicación del bioestimulante.
+
+```{r datos}
+datos <- readxl::read_excel(
+  path = "Ejemplo3_PC1TM.xlsx",
+  sheet = "Ejemplo 3"
+)
+
+datos$Momento <- factor(
+  datos$Momento,
+  levels = c("Antes", "Despues")
+)
+
+tt(head(datos, 10))
+```
+
+# Análisis descriptivo
+
+Antes de realizar la inferencia multivariada se examinan las medidas descriptivas y el comportamiento gráfico de las cuatro variables. Esta etapa permite conocer la magnitud y dirección aparente de los cambios.
+
+## Medidas descriptivas por momento
+
+```{r descriptivos}
+descriptivos <- datos %>%
+  tidyr::pivot_longer(
+    cols = c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+    names_to = "Variable",
+    values_to = "Valor"
+  ) %>%
+  dplyr::group_by(Momento, Variable) %>%
+  dplyr::summarise(
+    n = sum(!is.na(Valor)),
+    Media = mean(Valor, na.rm = TRUE),
+    DE = sd(Valor, na.rm = TRUE),
+    Mediana = median(Valor, na.rm = TRUE),
+    Min = min(Valor, na.rm = TRUE),
+    Max = max(Valor, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(Variable, Momento)
+
+knitr::kable(
+  descriptivos,
+  digits = 2,
+  caption = "Estadísticos descriptivos por variable y momento",
+  align = c("l", "l", "c", "r", "r", "r", "r", "r")
+)
+```
+
+Para facilitar la comparación directa de las medias:
+
+```{r tabla-medias}
+medias_momento <- datos %>%
+  dplyr::group_by(Momento) %>%
+  dplyr::summarise(
+    dplyr::across(
+      c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+      ~mean(.x, na.rm = TRUE)
+    ),
+    .groups = "drop"
+  )
+
+knitr::kable(medias_momento, digits = 2, caption = "Medias de las variables según momento")
+```
+
+Descriptivamente, después de aplicar el bioestimulante se observa un incremento promedio en las cuatro variables. La altura pasa aproximadamente de **51.97 cm a 58.12 cm**, el índice SPAD de **34.10 a 38.05**, el número de flores de **8.07 a 9.93** y el área foliar de **424.25 cm² a 475.79 cm²**. Estos resultados describen una tendencia favorable, pero todavía no permiten afirmar que el cambio conjunto sea estadísticamente significativo.
+
+## Distribución antes y después
+
+```{r datos-largos}
+datos_largos <- datos %>%
+  tidyr::pivot_longer(
+    cols = c(Altura_cm, SPAD, Flores, Area_foliar_cm2),
+    names_to = "Variable",
+    values_to = "Valor"
+  )
+datos_largos
+```
+
+```{r boxplots}
+ggplot(datos_largos, aes(x = Momento, y = Valor, fill = Momento)) +
+  geom_boxplot(alpha = 0.70) +
+  facet_wrap(~Variable, scales = "free_y", ncol = 2) +
+  labs(
+    title = "Distribución de las variables antes y después del bioestimulante",
+    x = "Momento de evaluación",
+    y = "Valor observado"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+En el grafico, las distribuciones posteriores se encuentran, en general, desplazadas hacia valores mayores. El incremento visual es especialmente claro en **altura, SPAD y área foliar**. No obstante, los boxplots muestran grupos de mediciones y no aprovechan directamente el emparejamiento de las plantas.
+
+## Cambios individuales de las plantas
+
+```{r grafico-pareado}
+ggplot(
+  datos_largos,
+  aes(x = Momento, y = Valor, group = Planta)
+) +
+  geom_line(alpha = 0.50) +
+  geom_point(size = 2) +
+  facet_wrap(~Variable, scales = "free_y", ncol = 2) +
+  labs(
+    title = "Cambios individuales de las mismas plantas",
+    subtitle = "Cada línea corresponde a una planta",
+    x = "Momento de evaluación",
+    y = "Valor observado"
+  ) +
+  theme_minimal()
+```
+
+Como se puede observar en el grafico, la mayoría de las líneas presentan una trayectoria ascendente entre la evaluación inicial y final. Este gráfico evidencia la naturaleza **pareada** del diseño: cada planta funciona como su propio punto de comparación y el patrón de incremento es relativamente consistente en las cuatro respuestas.
+
+# Desarrollo del análisis multivariado
+
+## Construcción de las muestras dependientes
+
+Para una prueba multivariada pareada se forman dos matrices con el mismo orden de plantas. Posteriormente se calcula una única matriz de diferencias:
+
+\[
+\mathbf{D}_i=\mathbf{X}_{i,\text{Después}}-\mathbf{X}_{i,\text{Antes}}.
+\]
+
+```{r matrices}
+m1 <- datos %>%
+  dplyr::filter(Momento == "Antes") %>%
+  dplyr::arrange(Planta) %>%
+  dplyr::select(Altura_cm, SPAD, Flores, Area_foliar_cm2) %>%
+  as.matrix()
+
+m2 <- datos %>%
+  dplyr::filter(Momento == "Despues") %>%
+  dplyr::arrange(Planta) %>%
+  dplyr::select(Altura_cm, SPAD, Flores, Area_foliar_cm2) %>%
+  as.matrix()
+
+X <- m2 - m1
+xbar <- colMeans(X)
+
+knitr::kable(
+  data.frame(Variable = colnames(X), Media_diferencia = xbar),
+  digits = 3,
+  caption = "Vector de medias de las diferencias (Después - Antes)"
+)
+```
+
+Como las diferencias se definieron como **Después - Antes**, los valores positivos representan incrementos posteriores al tratamiento. Las cuatro diferencias promedio son positivas.
+
+## Distribución de las diferencias
+
+```{r diferencias-largo}
+dif_largo <- as.data.frame(X) %>%
+  dplyr::mutate(Planta = 1:dplyr::n()) %>%
+  tidyr::pivot_longer(
+    cols = -Planta,
+    names_to = "Variable",
+    values_to = "Diferencia"
+  )
+```
+
+```{r histogramas-diferencias}
+ggplot(dif_largo, aes(x = Diferencia)) +
+  geom_histogram(bins = 7, color = "white") +
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~Variable, scales = "free", ncol = 2) +
+  labs(
+    title = "Distribución de las diferencias: Después - Antes",
+    subtitle = "La línea vertical representa ausencia de cambio",
+    x = "Diferencia",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+Se puede deducir que en el grafico las diferencias se concentran principalmente en valores positivos. Esto indica que el incremento observado en las medias no se debe únicamente a unas pocas plantas, sino que aparece de forma relativamente general en la muestra.
+
+## Relaciones entre las diferencias
+
+```{r ggpairs, fig.width=10, fig.height=9}
+GGally::ggpairs(
+  as.data.frame(X),
+  title = "Relaciones entre las diferencias de las variables"
+)
+```
+
+Sobre el grafico podemos afirmar que las variables no deben analizarse como si fueran completamente aisladas. Existen asociaciones entre algunas de las diferencias, lo cual justifica utilizar una metodología multivariada que incorpore la matriz de varianzas y covarianzas en lugar de efectuar únicamente pruebas univariadas separadas.
+
+# Diagnóstico de valores atípicos multivariados
+
+La presencia de una observación extremadamente alejada puede influir sobre el vector de medias y, especialmente, sobre la matriz de covarianzas. Por ello se revisan los vectores de diferencias antes de aplicar la prueba de Hotelling.
+
+## Métodos robustos con `MVN`
+
+```{r outliers}
+outliers_quan <- MVN::mvn(
+  data = as.data.frame(X),
+  multivariate_outlier_method = "quan"
+)
+
+outliers_adj <- MVN::mvn(
+  data = as.data.frame(X),
+  multivariate_outlier_method = "adj",
+  alpha = alpha
+)
+
+outliers_quan$multivariate_outliers
+outliers_adj$multivariate_outliers
+```
+
+Estos procedimientos son diagnósticos y no constituyen una prueba para eliminar observaciones automáticamente. Una planta señalada como atípica debería revisarse primero para determinar si corresponde a un error de medición o a una observación biológicamente válida.
+
+## Distancia de Mahalanobis
+
+```{r mahalanobis}
+centro <- colMeans(X)
+S <- cov(X)
+
+dist_mahal <- mahalanobis(X, center = centro, cov = S)
+corte_mahal <- qchisq(0.975, df = ncol(X))
+
+tabla_mahal <- data.frame(
+  Planta = 1:nrow(X),
+  Distancia_Mahalanobis = dist_mahal,
+  Atipico = dist_mahal > corte_mahal
+)
+
+knitr::kable(tabla_mahal, digits = 3, caption = "Distancias de Mahalanobis")
+```
+
+```{r grafico-mahalanobis}
+ggplot(tabla_mahal, aes(x = Planta, y = Distancia_Mahalanobis)) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = corte_mahal, linetype = "dashed") +
+  labs(
+    title = "Distancias de Mahalanobis de los vectores de diferencias",
+    subtitle = "La línea horizontal representa el punto de corte exploratorio",
+    x = "Planta",
+    y = expression(D^2)
+  ) +
+  theme_minimal()
+```
+
+Del grafico,ninguna planta supera el punto de corte clásico basado en \(\chi^2\) al 97.5%. No se observa evidencia gráfica de un vector de diferencias extremadamente alejado respecto al comportamiento multivariado general.
+
+# Supuesto de normalidad multivariada
+
+La prueba \(T^2\) de Hotelling para muestras dependientes se aplica sobre los **vectores de diferencias**, por lo que el supuesto relevante es la normalidad multivariada de \(X=\text{Después}-\text{Antes}\).
+
+## Hipótesis
+
+\[
+H_0:\text{Los vectores de diferencias siguen una distribución normal multivariada.}
+\]
+
+\[
+H_1:\text{Los vectores de diferencias no siguen una distribución normal multivariada.}
+\]
+
+## Nivel de significancia
+
+Se utiliza:
+
+\[
+\alpha=0.05.
+\]
+
+## Pruebas estadísticas
+
+### Shapiro-Wilk multivariado
+
+```{r shapiro-multivariado}
+normalidad_shapiro <- mvnormtest::mshapiro.test(t(X))
+normalidad_shapiro
+```
+
+```{r decision-shapiro, echo=FALSE}
+p_shapiro <- normalidad_shapiro$p.value
+decision_shapiro <- ifelse(
+  p_shapiro > alpha,
+  "No se rechaza H0",
+  "Se rechaza H0"
+)
+
+tabla_shapiro <- data.frame(
+  Prueba = "Shapiro-Wilk multivariado",
+  Estadistico = unname(normalidad_shapiro$statistic),
+  p_valor = p_shapiro,
+  Decision = decision_shapiro
+)
+
+knitr::kable(tabla_shapiro, digits = 5)
+```
+
+**Decisión estadística.** La decisión se obtiene comparando el p-valor con \(\alpha=0.05\). Si \(p>0.05\), no se rechaza \(H_0\); si \(p\leq0.05\), se rechaza \(H_0\).
+
+**Conclusión estadística.** De acuerdo con el resultado mostrado, se determina si existe o no evidencia suficiente para considerar que los vectores de diferencias se apartan de la normalidad multivariada.
+
+### Pruebas complementarias de normalidad multivariada
+
+Se utilizan adicionalmente Royston, Mardia, Henze-Zirkler, Doornik-Hansen y Energy. Todas contrastan, mediante criterios distintos, la misma hipótesis general de normalidad multivariada.
+
+```{r normalidad-complementaria}
+royston <- MVN::mvn(as.data.frame(X), mvn_test = "royston")
+mardia  <- MVN::mvn(as.data.frame(X), mvn_test = "mardia")
+hz      <- MVN::mvn(as.data.frame(X), mvn_test = "hz")
+dh      <- MVN::mvn(as.data.frame(X), mvn_test = "doornik_hansen")
+energy  <- MVN::mvn(as.data.frame(X), mvn_test = "energy")
+
+extraer_mvn <- function(objeto) {
+  resultado <- objeto$multivariate_normality
+
+  # Algunas pruebas de MVN devuelven p-valores numéricos y otras
+  # pueden devolver textos como "<0.001". Para evitar errores al
+  # combinar tablas, primero conservamos el texto original y luego
+  # construimos una versión numérica solo para tomar la decisión.
+  p_texto <- as.character(resultado$p.value)
+  p_numerico <- suppressWarnings(as.numeric(gsub("<", "", p_texto)))
+
+  # Si el p-valor viene como "<0.001", usamos 0.001 como referencia
+  # numérica conservadora para la regla de decisión.
+  es_menor_que <- grepl("^<", p_texto)
+  p_numerico[es_menor_que & !is.na(p_numerico)] <- p_numerico[es_menor_que & !is.na(p_numerico)]
+
+  data.frame(
+    Prueba = as.character(resultado$Test),
+    Estadistico = as.character(resultado$Statistic),
+    p_valor = p_texto,
+    p_num = p_numerico,
+    stringsAsFactors = FALSE
+  )
+}
+
+tabla_normalidad <- dplyr::bind_rows(
+  extraer_mvn(royston),
+  extraer_mvn(mardia),
+  extraer_mvn(hz),
+  extraer_mvn(dh),
+  extraer_mvn(energy)
+) %>%
+  dplyr::mutate(
+    Decision = dplyr::case_when(
+      !is.na(p_num) & p_num > alpha ~ "No se rechaza H0",
+      !is.na(p_num) & p_num <= alpha ~ "Se rechaza H0",
+      TRUE ~ "Revisar salida de la prueba"
+    )
+  ) %>%
+  dplyr::select(Prueba, Estadistico, p_valor, Decision)
+
+knitr::kable(
+  tabla_normalidad,
+  caption = "Pruebas complementarias de normalidad multivariada"
+)
+```
+
+**Prueba estadística y p-valores.** La tabla presenta el estadístico y el p-valor de cada procedimiento. En la prueba de Mardia deben interpretarse conjuntamente sus componentes de asimetría y curtosis.
+
+**Decisión estadística.** Para cada prueba, \(p>0.05\) conduce a no rechazar \(H_0\), mientras que \(p\leq0.05\) conduce a rechazarla.
+
+**Conclusión estadística.** La normalidad multivariada se evalúa considerando el conjunto de evidencias. No es necesario que cumpla el criterio de normalidad en todas las pruebas, ya que cada prueba utiliza un criterio diferente.
+
+# Prueba \(T^2\) de Hotelling para muestras dependientes
+
+La inferencia principal busca establecer si el vector de medias de las cuatro características agronómicas cambió después de la aplicación del bioestimulante.
+
+Sea:
+
+\[
+\boldsymbol{\mu}_D =
+\boldsymbol{\mu}_{Después}-
+\boldsymbol{\mu}_{Antes}.
+\]
+
+## Hipótesis
+
+\[
+H_0:
+\boldsymbol{\mu}_D=
+\begin{bmatrix}
+0\\
+0\\
+0\\
+0
+\end{bmatrix}
+\]
+
+frente a:
+
+\[
+H_1:
+\boldsymbol{\mu}_D\neq
+\begin{bmatrix}
+0\\
+0\\
+0\\
+0
+\end{bmatrix}.
+\]
+
+Equivalentemente:
+
+\[
+H_0:\boldsymbol{\mu}_{Después}=\boldsymbol{\mu}_{Antes}
+\]
+
+\[
+H_1:\boldsymbol{\mu}_{Después}\neq\boldsymbol{\mu}_{Antes}.
+\]
+
+La hipótesis alternativa indica una **diferencia multivariada global**; no implica por sí sola que cada una de las cuatro variables sea individualmente significativa.
+
+## Nivel de significancia
+
+\[
+\alpha=0.05.
+\]
+
+## Prueba con `Mpaired()`
+
+```{r mpaired}
+resultado_pareado <- MVTests::Mpaired(T1 = m2, T2 = m1)
+summary(resultado_pareado)
+```
+
+Esta función realiza directamente la comparación multivariada pareada entre las mediciones posteriores y anteriores.
+
+## Prueba con `HotellingsT2()`
+
+Como \(X\) ya contiene los vectores de diferencias, la prueba se puede expresar como una prueba \(T^2\) de una muestra contra el vector cero.
+
+```{r hotelling-icsnp}
+resultado_hotelling <- ICSNP::HotellingsT2(X)
+resultado_hotelling
+```
+
+## Cálculo de \(T^2\), transformación a \(F\) y p-valor
+
+La estadística utilizada es:
+
+\[
+T^2=n(\bar{\mathbf D}-\boldsymbol{\mu}_0)'
+S_D^{-1}
+(\bar{\mathbf D}-\boldsymbol{\mu}_0),
+\]
+
+donde \(\boldsymbol{\mu}_0=\mathbf 0\).
+
+```{r calculo-hotelling}
+n <- nrow(X)
+p <- ncol(X)
+S <- cov(X)
+mu0 <- rep(0, p)
+
+T2 <- as.numeric(
+  n * t(xbar - mu0) %*% solve(S) %*% (xbar - mu0)
+)
+
+F_calculado <- ((n - p) / (p * (n - 1))) * T2
+gl1 <- p
+gl2 <- n - p
+p_valor_hotelling <- pf(F_calculado, gl1, gl2, lower.tail = FALSE)
+
+tabla_hotelling <- data.frame(
+  T2 = T2,
+  F = F_calculado,
+  gl1 = gl1,
+  gl2 = gl2,
+  p_valor = p_valor_hotelling
+)
+
+knitr::kable(
+  tabla_hotelling,
+  digits = 6,
+  caption = "Resultados de la prueba T² de Hotelling"
+)
+```
+
+## Decisión estadística
+
+```{r decision-hotelling, echo=FALSE}
+decision_hotelling <- ifelse(
+  p_valor_hotelling < alpha,
+  "Se rechaza H0",
+  "No se rechaza H0"
+)
+
+cat("Decisión:", decision_hotelling)
+```
+
+Como el p-valor obtenido es considerablemente menor que \(0.05\), **se rechaza la hipótesis nula**.
+
+## Conclusión de la prueba
+
+Existe evidencia estadísticamente significativa de que el **vector conjunto de medias** de altura, SPAD, número de flores y área foliar después de la aplicación del bioestimulante es diferente del vector correspondiente antes de su aplicación.
+
+Con esta base se obtiene aproximadamente:
+
+\[
+T^2=656.574,\qquad
+F_{4,11}=128.970,\qquad
+p<0.001.
+\]
+
+Por tanto, el cambio observado no puede explicarse razonablemente como una simple variación muestral bajo la hipótesis de ausencia de efecto multivariado.
+
+# Magnitud y dirección descriptiva de los cambios
+
+La prueba de Hotelling establece la existencia de una diferencia global. Para interpretar la dirección del cambio se examina el vector de medias de las diferencias.
+
+```{r direccion-cambios}
+interpretacion <- data.frame(
+  Variable = colnames(X),
+  Media_Diferencia = xbar,
+  Direccion = ifelse(
+    xbar > 0,
+    "Incremento",
+    ifelse(xbar < 0, "Disminución", "Sin cambio promedio")
+  )
+)
+
+knitr::kable(
+  interpretacion,
+  digits = 3,
+  caption = "Dirección descriptiva de los cambios"
+)
+```
+
+El patrón es coherente: las cuatro diferencias promedio son positivas. En términos descriptivos, después de aplicar el bioestimulante se observó un incremento promedio aproximado de **6.15 cm en altura**, **3.95 unidades SPAD**, **1.87 flores** y **51.55 cm² de área foliar**.
+
+# Discusión de resultados
+
+El análisis descriptivo mostró desde el inicio una tendencia favorable después de la aplicación del bioestimulante. Los boxplots evidenciaron un desplazamiento general hacia valores superiores y el gráfico pareado mostró que los cambios positivos se presentaron en una proporción importante de las mismas plantas.
+
+La construcción de la matriz \(X=\text{Después}-\text{Antes}\) permitió aprovechar correctamente la dependencia entre las mediciones. Este aspecto es fundamental: no se compararon dos grupos independientes de plantas, sino el cambio ocurrido dentro de cada individuo.
+
+La revisión de las distancias de Mahalanobis no mostró observaciones que superaran el punto de corte clásico utilizado como referencia exploratoria. Esto reduce la preocupación de que el resultado multivariado esté siendo determinado por una única planta extremadamente alejada.
+
+La normalidad multivariada debe juzgarse a partir de las pruebas presentadas sobre la matriz de diferencias. Este supuesto es relevante porque la distribución de referencia de la \(T^2\) de Hotelling depende de la aproximación normal multivariada de los vectores de diferencias.
+
+La prueba principal produjo un valor de \(T^2\) muy elevado y un p-valor muy inferior a 0.05. En consecuencia, existe evidencia clara de que el perfil agronómico conjunto cambió después de la aplicación del bioestimulante.
+
+Sin embargo, la conclusión de Hotelling es **global**. El rechazo de \(H_0\) demuestra que el vector conjunto de medias cambió, pero no constituye por sí solo una prueba de significancia individual para cada variable. Las medias de las diferencias permiten describir la dirección del cambio y muestran incrementos en las cuatro respuestas; si el objetivo fuera identificar formalmente cuáles variables contribuyen de manera individual al efecto, sería necesario realizar análisis posteriores con un control apropiado de comparaciones múltiples.
+
+# Conclusiones
+
+- **El bioestimulante produjo un cambio global en el perfil agronómico de las plantas.** La prueba \(T^2\) de Hotelling para muestras dependientes rechazó la hipótesis nula de igualdad entre los vectores de medias antes y después de la aplicación, con \(T^2\approx656.574\), \(F_{4,11}\approx128.970\) y \(p<0.001\). Por tanto, existe evidencia estadística de que, consideradas en conjunto, las cuatro variables agronómicas cambiaron después del tratamiento.
+
+- **La dirección descriptiva del cambio fue favorable en las cuatro respuestas estudiadas.** Las diferencias promedio \((Después-Antes)\) fueron positivas: aproximadamente **+6.15 cm** en altura, **+3.95 unidades SPAD**, **+1.87 flores** y **+51.55 cm²** de área foliar. Los gráficos descriptivos y pareados también muestran que este patrón de incremento se presenta en una parte importante de las plantas y no únicamente en los promedios generales.
+
+- **Los diagnósticos previos respaldan la aplicación del análisis multivariado.** La evaluación de valores atípicos mediante distancia de Mahalanobis no mostró plantas extremadamente alejadas bajo el criterio exploratorio utilizado, y la normalidad multivariada fue evaluada sobre la matriz de diferencias, que es la estructura pertinente en un diseño pareado. Estos diagnósticos permiten interpretar la prueba de Hotelling dentro de los supuestos considerados en el análisis.
+
+- **La inferencia obtenida es multivariada y debe interpretarse de manera global.** El rechazo de \(H_0\) indica que el vector conjunto de medias cambió, pero no demuestra por sí solo que cada variable sea individualmente significativa. Las medias permiten describir en qué dirección cambiaron altura, SPAD, flores y área foliar; para identificar formalmente cuáles variables explican la diferencia global sería necesario realizar análisis complementarios con un control adecuado de comparaciones múltiples.
