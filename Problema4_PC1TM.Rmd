@@ -1,0 +1,509 @@
+---
+title: "Problema4-PC1TecnicasMultivariadas"
+subtitle: "Comparación multivariada de pequeñas empresas de dos sectores"
+author: "Grupo 4"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    theme: flatly
+    code_folding: show
+lang: es
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5
+)
+
+alpha <- 0.05
+
+library(tidyverse)
+library(readxl)
+library(GGally)
+library(rstatix)
+library(mvnormtest)
+library(MVTests)
+library(ICSNP)
+library(Hotelling)
+library(heplots)
+library(rrcov)
+library(ergm)
+library(knitr)
+```
+
+# Introducción
+
+Se desea comparar el perfil económico promedio de pequeñas empresas pertenecientes a dos sectores distintos: **restaurantes** y **tiendas minoristas**.
+
+En cada empresa se registran dos variables cuantitativas:
+
+- **Utilidad:** utilidad mensual de la empresa, expresada en miles de soles.
+- **Crecimiento:** crecimiento porcentual de las ventas durante el último año.
+
+Cada empresa se representa mediante el vector:
+
+\[
+\mathbf{X}=
+\begin{pmatrix}
+\text{Utilidad}\\
+\text{Crecimiento}
+\end{pmatrix}.
+\]
+
+Se consideran 20 restaurantes y 20 tiendas. Las muestras son **independientes** porque las empresas de un sector son distintas de las del otro y no existe emparejamiento entre observaciones.
+
+El objetivo del análisis es determinar si los dos sectores presentan el mismo vector de medias poblacional:
+
+\[
+H_0:\boldsymbol{\mu}_{R}=\boldsymbol{\mu}_{T}
+\]
+
+frente a:
+
+\[
+H_1:\boldsymbol{\mu}_{R}\neq\boldsymbol{\mu}_{T}.
+\]
+
+Los datos son simulados con fines didácticos y se encuentran almacenados en el archivo **Ejemplo4_PC1TM.xlsx**, en la hoja **Datos**.
+
+```{r datos}
+datos <- read_excel(
+  "Ejemplo4_PC1TM.xlsx",
+  sheet = "Datos"
+)
+
+datos$Sector <- as.factor(datos$Sector)
+
+head(datos)
+str(datos)
+```
+
+# Análisis descriptivo
+
+## Estadísticas descriptivas por sector
+
+```{r descriptivos, class.source='fold-hide'}
+descriptivos <- datos %>%
+  dplyr::group_by(Sector) %>%
+  dplyr::summarise(
+    n = dplyr::n(),
+    media_utilidad = mean(Utilidad),
+    sd_utilidad = sd(Utilidad),
+    mediana_utilidad = median(Utilidad),
+    min_utilidad = min(Utilidad),
+    max_utilidad = max(Utilidad),
+    media_crecimiento = mean(Crecimiento),
+    sd_crecimiento = sd(Crecimiento),
+    mediana_crecimiento = median(Crecimiento),
+    min_crecimiento = min(Crecimiento),
+    max_crecimiento = max(Crecimiento),
+    .groups = "drop"
+  )
+
+descriptivos_vertical <- descriptivos %>%
+  tidyr::pivot_longer(
+    cols = -Sector,
+    names_to = "Estadístico",
+    values_to = "Valor"
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = Sector,
+    values_from = Valor
+  ) %>%
+  dplyr::mutate(
+    Estadístico = dplyr::recode(
+      Estadístico,
+      n = "Número de empresas",
+      media_utilidad = "Media de utilidad",
+      sd_utilidad = "Desv. estándar de utilidad",
+      mediana_utilidad = "Mediana de utilidad",
+      min_utilidad = "Mínimo de utilidad",
+      max_utilidad = "Máximo de utilidad",
+      media_crecimiento = "Media de crecimiento",
+      sd_crecimiento = "Desv. estándar de crecimiento",
+      mediana_crecimiento = "Mediana de crecimiento",
+      min_crecimiento = "Mínimo de crecimiento",
+      max_crecimiento = "Máximo de crecimiento"
+    )
+  )
+
+kable(
+  descriptivos_vertical,
+  digits = 2,
+  caption = "Estadísticas descriptivas por sector"
+)
+```
+
+Los restaurantes presentan una utilidad media de `r round(descriptivos$media_utilidad[descriptivos$Sector=="Restaurante"],2)` miles de soles, mientras que las tiendas presentan una utilidad media de `r round(descriptivos$media_utilidad[descriptivos$Sector=="Tienda"],2)` miles de soles.
+
+En crecimiento anual se observa el patrón contrario: los restaurantes presentan una media de `r round(descriptivos$media_crecimiento[descriptivos$Sector=="Restaurante"],2)`%, mientras que las tiendas alcanzan `r round(descriptivos$media_crecimiento[descriptivos$Sector=="Tienda"],2)`%.
+
+## Correlaciones por sector
+
+```{r correlaciones}
+correlaciones <- datos %>%
+  dplyr::group_by(Sector) %>%
+  dplyr::summarise(
+    correlacion = cor(Utilidad, Crecimiento),
+    .groups = "drop"
+  )
+
+kable(correlaciones, digits = 3,
+      caption = "Correlación entre utilidad y crecimiento")
+```
+
+La correlación permite observar qué tan relacionadas están la utilidad y el crecimiento dentro de cada sector. Esta relación es importante porque el análisis multivariado toma en cuenta la asociación entre las variables.
+
+## Boxplot de utilidad
+
+```{r box-utilidad, class.source='fold-hide'}
+comparaciones <- list(c("Restaurante", "Tienda"))
+
+ggplot(data = datos, aes(x = Sector, y = Utilidad)) +
+  geom_boxplot(fill = c("#E6E6FA", "#FFE4B5")) +
+  labs(
+    x = "Sector",
+    y = "Utilidad mensual (miles de soles)",
+    title = "Utilidad mensual de pequeñas empresas"
+  ) +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Los restaurantes presentan niveles de utilidad claramente superiores a los de las tiendas. Sin embargo, esta diferencia gráfica es descriptiva y todavía no constituye una conclusión inferencial.
+
+## Boxplot de crecimiento
+
+```{r box-crecimiento, class.source='fold-hide'}
+ggplot(data = datos, aes(x = Sector, y = Crecimiento)) +
+  geom_boxplot(fill = c("#E6E6FA", "#FFE4B5")) +
+  labs(
+    x = "Sector",
+    y = "Crecimiento anual (%)",
+    title = "Crecimiento anual de pequeñas empresas"
+  ) +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Las tiendas muestran valores de crecimiento mayores que los restaurantes, revelando un patrón opuesto al observado en la utilidad.
+
+## Diagrama de dispersión
+
+```{r dispersion, class.source='fold-hide'}
+ggplot(datos, aes(x = Utilidad, y = Crecimiento, color = Sector)) +
+  geom_point(size = 3) +
+  xlab("Utilidad mensual (miles de soles)") +
+  ylab("Crecimiento anual (%)") +
+  labs(title = "Utilidad y crecimiento según sector") +
+  theme_minimal()
+```
+
+**Conclusión del gráfico.** Los grupos ocupan zonas distintas del plano: los restaurantes se concentran en mayor utilidad y menor crecimiento, mientras que las tiendas presentan menor utilidad y mayor crecimiento. Esto sugiere que la comparación conjunta de ambas variables es pertinente.
+
+# Desarrollo del análisis multivariado
+
+## Formación de las dos muestras
+
+Para realizar el análisis multivariado se separan los datos en dos matrices, una para cada sector:
+
+- \(X\): empresas del sector restaurantes.
+- \(Y\): empresas del sector tiendas.
+
+```{r matrices}
+X <- filter(datos, Sector == "Restaurante")[, 2:3]
+Y <- filter(datos, Sector == "Tienda")[, 2:3]
+
+X
+Y
+```
+
+Los vectores de medias muestrales son:
+
+```{r medias}
+colMeans(X)
+colMeans(Y)
+```
+
+Y las matrices de varianzas-covarianzas muestrales:
+
+```{r covarianzas}
+var(X)
+var(Y)
+```
+
+Estas matrices muestran la variabilidad de cada variable y también la covarianza entre utilidad y crecimiento en cada sector.
+
+## Normalidad multivariada
+
+La prueba \(T^2\) de Hotelling parte del supuesto de normalidad multivariada en cada grupo.
+
+### Hipótesis
+
+Para restaurantes:
+
+\[
+H_0:\text{Utilidad y Crecimiento siguen una distribución normal bivariada}
+\]
+
+\[
+H_1:\text{Utilidad y Crecimiento no siguen una distribución normal bivariada}
+\]
+
+Para tiendas se plantean las mismas hipótesis.
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba estadística
+
+Se aplica `mshapiro.test()` a cada matriz transpuesta para evaluar la normalidad multivariada en ambos sectores.
+
+```{r normalidad}
+normalidad_rest <- mshapiro.test(t(X))
+normalidad_tienda <- mshapiro.test(t(Y))
+
+normalidad_rest
+normalidad_tienda
+```
+
+```{r p-normalidad, include=FALSE}
+p_norm_rest <- normalidad_rest$p.value
+p_norm_tienda <- normalidad_tienda$p.value
+```
+
+### p-valores
+
+- Restaurantes: \(p=\) `r format.pval(p_norm_rest, digits=4)`.
+- Tiendas: \(p=\) `r format.pval(p_norm_tienda, digits=4)`.
+
+### Decisión estadística
+
+Para restaurantes:  
+`r if (p_norm_rest < alpha) "Se rechaza H0." else "No se rechaza H0."`
+
+Para tiendas:  
+`r if (p_norm_tienda < alpha) "Se rechaza H0." else "No se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_norm_rest >= alpha && p_norm_tienda >= alpha) "No existe evidencia suficiente para rechazar el supuesto de normalidad multivariada en ninguno de los dos sectores." else "Al menos uno de los sectores presenta evidencia estadística contra la normalidad multivariada, por lo que este supuesto debe interpretarse con cautela."`
+
+## Homogeneidad de matrices de varianzas-covarianzas
+
+A continuación se evalúa si ambas poblaciones pueden considerarse con la misma matriz de varianzas-covarianzas.
+
+### Hipótesis
+
+\[
+H_0:\Sigma_R=\Sigma_T
+\]
+
+\[
+H_1:\Sigma_R\neq\Sigma_T
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba estadística
+
+Se utiliza la prueba M de Box:
+
+```{r boxm}
+results <- BoxM(data = datos[, 2:3], datos$Sector)
+summary(results)
+```
+
+```{r p-box, include=FALSE}
+p_box <- results$p.value
+```
+
+### p-valor
+
+\[
+p=`r format.pval(p_box, digits=4)`
+\]
+
+### Decisión estadística
+
+`r if (p_box < alpha) "Como p < 0.05, se rechaza H0." else "Como p >= 0.05, no se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_box < alpha) "Existe evidencia estadística de que las matrices de varianzas-covarianzas de restaurantes y tiendas son diferentes." else "No existe evidencia estadística suficiente para afirmar que las matrices de varianzas-covarianzas sean distintas."`
+
+## Comparación de los dos vectores de medias
+
+Se desea contrastar:
+
+### Hipótesis
+
+\[
+H_0:
+\boldsymbol{\mu}_{R}-\boldsymbol{\mu}_{T}
+=
+\begin{pmatrix}
+0\\
+0
+\end{pmatrix}
+\]
+
+\[
+H_1:
+\boldsymbol{\mu}_{R}-\boldsymbol{\mu}_{T}
+\neq
+\begin{pmatrix}
+0\\
+0
+\end{pmatrix}
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+Antes de realizar la prueba principal se crea un vector que identifica a qué sector pertenece cada observación:
+
+```{r grupo}
+G <- c(rep(1, 20), rep(2, 20))
+```
+
+### Prueba con `TwoSamplesHT2`
+
+```{r twosamples, class.source='fold-hide'}
+results1 <- TwoSamplesHT2(
+  data = datos[, 2:3],
+  group = G,
+  alpha = 0.05,
+  Homogenity = TRUE
+)
+
+summary(results1)
+```
+
+Esta prueba permite comparar los dos vectores de medias. Su interpretación debe hacerse considerando previamente el resultado de la prueba M de Box.
+
+## Prueba de Hotelling apropiada según Box M
+
+Cuando no puede asumirse homogeneidad de matrices, se utiliza una aproximación de Hotelling que permite trabajar con matrices de varianzas-covarianzas diferentes:
+
+```{r hotelling-aprox}
+hot_aprox <- approx.hotelling.diff.test(
+  X, Y,
+  mu0 = 0,
+  assume.indep = TRUE,
+  var.equal = FALSE
+)
+
+hot_aprox
+```
+
+```{r p-hotelling, include=FALSE}
+p_hotelling <- hot_aprox$p.value
+```
+
+### Interpretación de los argumentos
+
+- `X, Y`: matrices correspondientes a restaurantes y tiendas.
+- `mu0 = 0`: bajo \(H_0\), la diferencia entre los dos vectores de medias es el vector cero.
+- `assume.indep = TRUE`: las muestras son independientes.
+- `var.equal = FALSE`: no se supone igualdad de matrices de varianzas-covarianzas.
+
+### p-valor
+
+\[
+p=`r format.pval(p_hotelling, digits=5)`
+\]
+
+### Decisión estadística
+
+`r if (p_hotelling < alpha) "Como p < 0.05, se rechaza H0." else "Como p >= 0.05, no se rechaza H0."`
+
+### Conclusión estadística
+
+`r if (p_hotelling < alpha) "Existe evidencia estadística suficiente para concluir que los restaurantes y las tiendas minoristas presentan diferentes vectores medios de utilidad y crecimiento." else "No existe evidencia estadística suficiente para concluir que los vectores medios de restaurantes y tiendas sean diferentes."`
+
+## Prueba robusta complementaria
+
+Como análisis complementario puede emplearse una prueba robusta de Hotelling para comprobar si la conclusión principal se mantiene.
+
+### Hipótesis
+
+\[
+H_0:\boldsymbol{\mu}_{R}=\boldsymbol{\mu}_{T}
+\]
+
+\[
+H_1:\boldsymbol{\mu}_{R}\neq\boldsymbol{\mu}_{T}
+\]
+
+### Nivel de significancia
+
+\[
+\alpha=0.05
+\]
+
+### Prueba
+
+```{r robusta}
+robusta <- T2.test(
+  X,
+  Y,
+  mu = 0,
+  method = "c"
+)
+
+robusta
+```
+
+Esta prueba funciona como evidencia complementaria frente a posibles desviaciones de los supuestos clásicos.
+
+## Prueba T² de Hotelling bajo homogeneidad
+
+Si se pudiera asumir igualdad de matrices de varianzas-covarianzas, se podría aplicar la versión clásica de la prueba \(T^2\) de Hotelling.
+
+```{r hotelling-clasico}
+HotellingsT2(X, Y)
+```
+
+Este procedimiento es adecuado únicamente cuando la homogeneidad de matrices de varianzas-covarianzas puede considerarse razonable.
+
+# Discusión de resultados
+
+El análisis descriptivo indica que los dos sectores presentan perfiles económicos distintos. Los restaurantes muestran una **mayor utilidad mensual promedio**, mientras que las tiendas presentan un **mayor crecimiento anual promedio**.
+
+La representación conjunta mediante el diagrama de dispersión refuerza esta diferencia: ambos grupos se ubican en regiones distintas del plano definido por utilidad y crecimiento. Por ello, resulta apropiado analizar ambas variables de manera simultánea.
+
+La normalidad multivariada se evaluó por separado en los dos sectores mediante la prueba multivariada de Shapiro-Wilk. Además, se utilizó la prueba M de Box para analizar la igualdad de matrices de varianzas-covarianzas, ya que este resultado permite decidir qué versión de la prueba \(T^2\) es más apropiada.
+
+La prueba multivariada principal produce un p-valor de **`r format.pval(p_hotelling, digits=5)`**. Con un nivel de significancia de 5%, `r if (p_hotelling < alpha) "se rechaza la hipótesis nula de igualdad de los vectores de medias." else "no se rechaza la hipótesis nula de igualdad de los vectores de medias."`
+
+Por tanto, `r if (p_hotelling < alpha) "la evidencia estadística indica que el sector económico está asociado con un perfil conjunto diferente de utilidad y crecimiento." else "los datos no permiten concluir que exista una diferencia estadísticamente significativa entre los perfiles conjuntos de ambos sectores."`
+
+Es importante señalar que la prueba multivariada establece una diferencia **conjunta**. La dirección concreta de dicha diferencia se interpreta a partir de las medias: los restaurantes presentan mayor utilidad, mientras que las tiendas muestran mayor crecimiento.
+
+# Conclusiones
+
+1. **Perfil económico diferente.** Los restaurantes presentan una utilidad mensual promedio mayor, mientras que las tiendas minoristas muestran un crecimiento anual promedio superior.
+
+2. **Pertinencia del análisis multivariado.** El análisis conjunto de utilidad y crecimiento es más informativo que estudiar cada variable de manera aislada, porque permite considerar simultáneamente ambas dimensiones y su covariación.
+
+3. **Resultado inferencial principal.** Con \(\alpha=0.05\), la prueba multivariada obtiene un p-valor de `r format.pval(p_hotelling, digits=5)`. `r if (p_hotelling < alpha) "Se rechaza H0 y se concluye que los vectores medios de restaurantes y tiendas son significativamente diferentes." else "No se rechaza H0 y no existe evidencia suficiente para afirmar que los vectores medios sean diferentes."`
+
+4. **Interpretación económica.** `r if (p_hotelling < alpha) "Las diferencias observadas sugieren dos patrones económicos distintos: los restaurantes se caracterizan por mayor utilidad mensual, mientras que las tiendas se caracterizan por mayor crecimiento anual." else "Aunque descriptivamente se observan diferencias, estas no son suficientes para establecer una diferencia multivariada significativa al 5%."`
