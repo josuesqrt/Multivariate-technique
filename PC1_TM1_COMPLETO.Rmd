@@ -1848,3 +1848,308 @@ Es importante señalar que la prueba multivariada establece una diferencia **con
 3. **Resultado inferencial principal.** Con \(\alpha=0.05\), la prueba multivariada obtiene un p-valor de `r format.pval(p_hotelling, digits=5)`. `r if (p_hotelling < alpha) "Se rechaza H0 y se concluye que los vectores medios de restaurantes y tiendas son significativamente diferentes." else "No se rechaza H0 y no existe evidencia suficiente para afirmar que los vectores medios sean diferentes."`
 
 4. **Interpretación económica.** `r if (p_hotelling < alpha) "Las diferencias observadas sugieren dos patrones económicos distintos: los restaurantes se caracterizan por mayor utilidad mensual, mientras que las tiendas se caracterizan por mayor crecimiento anual." else "Aunque descriptivamente se observan diferencias, estas no son suficientes para establecer una diferencia multivariada significativa al 5%."`
+
+# PROBLEMA 5
+
+# Introducción
+El presente conjunto de datos corresponde a un experimento simulado bajo un Diseño Completamente al Azar (DCA), en el cual se evaluó el efecto de cinco tratamientos de fertilización (Control, T2, T3, T4 y T5) sobre el crecimiento de una especie vegetal, con 15 repeticiones por tratamiento (n = 75 unidades experimentales en total). Se registraron simultáneamente cuatro variables respuesta cuantitativas y correlacionadas entre sí —altura de planta (cm), peso seco (g), área foliar (cm²) y contenido de clorofila (unidades SPAD-, con el fin de caracterizar de manera conjunta la respuesta fisiológica de las plantas a cada tratamiento.
+
+Previo al análisis, se verificarán los supuestos de normalidad multivariada, homogeneidad de matrices de varianza-covarianza y correlación entre las variables respuesta; posteriormente, en caso de detectarse diferencias significativas a nivel global, se realizarán comparaciones múltiples por pares (incluyendo la comparación de cada tratamiento frente al control) para identificar entre qué grupos específicos se presentan dichas diferencias.
+
+# Desarrollo
+
+### Paquetes a utilizar
+
+```{r librerias}
+library(tidyverse)
+library(readxl)
+library(mvnormtest)
+library(heplots)
+library(psych)
+library(emmeans)
+```
+
+### Lectura de Datos
+
+```{r carga-datos}
+datos <- read_excel("datos_manova_dca.xlsx")
+datos$Tratamiento <- as.factor(datos$Tratamiento)
+
+str(datos)
+head(datos, 10)
+```
+
+```{r}
+datos %>%
+  pivot_longer(cols = c(Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD),
+               names_to = "Variable", values_to = "Valor") %>%
+  ggplot(aes(x = Tratamiento, y = Valor, fill = Tratamiento)) +
+  geom_boxplot(show.legend = FALSE) +
+  facet_wrap(~ Variable, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Distribución de las variables respuesta por tratamiento",
+       x = "Tratamiento", y = NULL)
+```
+**Se observa que T4 tiende a presentar los valores más altos en Altura_cm, Peso_seco_g y Clorofila_SPAD, mientras que T5 se ubica consistentemente en el extremo inferior. La variable N_hojas, en cambio, muestra distribuciones más solapadas entre tratamientos.**
+
+# I. Supuesto de variables dependientes correlacionadas
+
+Antes de ajustar un modelo MANOVA es indispensable comprobar que las variables respuesta no son independientes entre sí, ya que si no existiera correlación entre ellas no habría ninguna ventaja en analizarlas de forma conjunta y bastaría con realizar un ANOVA independiente para cada una. Para ello se verifica que las variables respuesta estén correlacionadas entre sí mediante el test de esfericidad de Bartlett, el cual contrasta si la matriz de correlaciones poblacional es igual a la matriz identidad (es decir, si todas las correlaciones entre pares de variables son simultáneamente nulas).
+
+Sean $Y_1, Y_2, Y_3, Y_4$ las cuatro variables respuesta (Altura_cm, Peso_seco_g, N_hojas y Clorofila_SPAD, respectivamente) y $\rho_{v v'}$ el coeficiente de correlación poblacional entre las variables $Y_v$ y $Y_{v'}$, con $v, v' = 1, 2, 3, 4$ los índices que identifican a cada una de dichas variables. Las hipótesis del test quedan planteadas como:
+
+$$
+H_0: \rho_{v v'} = 0 \quad \text{para todo } v \neq v', \quad v,v' = 1,2,3,4
+$$
+
+$$
+H_1: \rho_{v v'} \neq 0 \quad \text{para algún par } v \neq v'
+$$
+
+Es decir, bajo $H_0$ ninguna de las cuatro variables de crecimiento estaría correlacionada con las demás, mientras que bajo $H_1$ existiría al menos un par de variables (por ejemplo, altura de planta y peso seco) que sí estarían asociadas entre sí.
+
+```{r bartlett}
+vars_respuesta <- datos %>%
+  dplyr::select(,-c(1,2))
+
+cortest.bartlett(cor(vars_respuesta), n = nrow(vars_respuesta))
+```
+
+**Interpretación:** La prueba de esfericidad de Bartlett nos indica que a un 0.05 de nivel de significancia existe suficiente evidencia estadística para rechazar la hipótesis nula. Por lo que podemos asegurar que la matriz de correlaciones es significativamente diferente de la identidad. Razón por lo cual tiene sentido aplicar un MANOVA en lugar de varios ANOVA.
+
+
+# II. Supuesto de normalidad multivariada
+
+El MANOVA asume que, dentro de cada grupo de tratamiento, el vector de variables respuesta sigue una distribución normal multivariada. Este supuesto es necesario para que los estadísticos de contraste (Pillai, Wilks, Hotelling-Lawley y Roy) tengan las propiedades distribucionales bajo las cuales se calculan sus valores p. Se evalúa la normalidad multivariada dentro de cada tratamiento mediante el test de Shapiro-Wilk multivariado (`mshapiro.test`), aplicado de forma independiente a las observaciones de cada uno de los cinco tratamientos.
+
+Sea $\mathbf{X}_t = (X_{t1}, X_{t2}, X_{t3}, X_{t4})'$ el vector de variables respuesta observado en el $t$-ésimo tratamiento, con $t = 1, 2, 3, 4, 5$ (correspondiente a T1, T2, T3, T4 y T5). Para cada tratamiento $t$ se contrasta:
+
+$$
+H_0: \mathbf{X}_t \sim N_p(\boldsymbol{\mu}_t, \boldsymbol{\Sigma}_t)
+$$
+
+$$
+H_1: \mathbf{X}_t \nsim N_p(\boldsymbol{\mu}_t, \boldsymbol{\Sigma}_t)
+$$
+
+Donde $\mathbf{X}_t$ es el vector de variables respuesta (Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD) para el tratamiento $t$, $p = 4$ es el número de variables, $\boldsymbol{\mu}_t$ es el vector de medias poblacional de ese tratamiento y $\boldsymbol{\Sigma}_t$ es su matriz de varianza-covarianza. La prueba se repite para cada uno de los cinco tratamientos ($t = 1, \dots, 5$), por lo que en total se obtienen cinco contrastes independientes de normalidad multivariada.
+
+```{r normalidad-subsets}
+trat1 <- datos %>% filter(Tratamiento == "T1") %>%
+  dplyr::select(,-c(1,2))
+trat2 <- datos %>% filter(Tratamiento == "T2") %>%
+  dplyr::select(,-c(1,2))
+trat3 <- datos %>% filter(Tratamiento == "T3") %>%
+  dplyr::select(,-c(1,2))
+trat4 <- datos %>% filter(Tratamiento == "T4") %>%
+  dplyr::select(,-c(1,2))
+trat5 <- datos %>% filter(Tratamiento == "T5") %>%
+  dplyr::select(,-c(1,2))
+
+```
+
+```{r}
+mshapiro.test(t(trat1))
+mshapiro.test(t(trat2))
+mshapiro.test(t(trat3))
+mshapiro.test(t(trat4))
+mshapiro.test(t(trat5))
+```
+
+Todas las pruebas rechazan la normalidad multivariada de las variables respuesta para cada uno de los 5 tratamientos. Se procederá a verificar el cumplimiento del supuesto de homogeneidad para tomar una decisión.
+
+**Interpretación:** El incumplimiento de la normalidad multivariada no invalida automáticamente el uso del MANOVA: dado que los tamaños de muestra por grupo son moderados (15 repeticiones por tratamiento) y relativamente balanceados, los estadísticos multivariados —en particular el de Pillai— suelen mantener un buen desempeño incluso ante desviaciones de la normalidad, siempre que se cumpla el supuesto de homogeneidad de matrices de varianza-covarianza. Por ello, antes de decidir cómo proceder, es necesario evaluar dicho supuesto en la siguiente sección.
+
+# III. Supuesto de homogeneidad de matrices varianza-covarianza
+
+Además de la normalidad multivariada, el MANOVA requiere que la estructura de varianzas y covarianzas entre las variables respuesta sea la misma en los cinco tratamientos, de modo que las diferencias detectadas entre grupos puedan atribuirse a diferencias en las medias y no a diferencias en la variabilidad o en el patrón de asociación entre variables. Este supuesto se evalúa mediante el test M de Box, que contrasta la igualdad de las matrices de varianza-covarianza entre los grupos de tratamiento.
+
+Sea $\boldsymbol{\Sigma}_t$ la matriz de varianza-covarianza poblacional (de dimensión $4 \times 4$, una fila/columna por cada variable respuesta) correspondiente al $t$-ésimo tratamiento, con $t = 1, 2, 3, 4, 5$ identificando a T1, T2, T3, T4 y T5 respectivamente. Las hipótesis se plantean como:
+
+$$
+H_0: \boldsymbol{\Sigma}_1 = \boldsymbol{\Sigma}_2 = \boldsymbol{\Sigma}_3 = \boldsymbol{\Sigma}_4 = \boldsymbol{\Sigma}_5
+$$
+
+$$
+H_1: \boldsymbol{\Sigma}_t \neq \boldsymbol{\Sigma}_{t'} \quad \text{para algún par } t \neq t', \quad t,t' = 1,2,3,4,5
+$$
+
+Es decir, bajo $H_0$ los cinco tratamientos comparten una única estructura de varianzas y covarianzas entre las variables de crecimiento, mientras que bajo $H_1$ al menos dos tratamientos (identificados por los índices $t$ y $t'$) presentarían matrices de varianza-covarianza distintas entre sí.
+
+```{r boxm}
+boxM_res <- heplots::boxM(
+  cbind(Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD) ~ Tratamiento,
+  data = datos
+)
+boxM_res
+summary(boxM_res)
+```
+El test M de Box nos indica que a un nivel de significancia de 0.05 no existe evidencia estadística suficiente para rechaza la homogeneidad de las matrices varianza-covarianza de cada uno de los tratamientos. 
+
+**Interpretación:** Gracias al cumplimiento de este supuesto, podemos proseguir con la aplicación del MANOVA, pues este, y los estadísticos a probar, son robustos ante el incumplimento de la normalidad multivariada. Y en conjunto con el cumplimento de la homogeneidad nos darán estimaciones razonablemente válidas.
+
+En resumen, aunque el supuesto de normalidad multivariada no se cumplió de forma estricta en ninguno de los cinco tratamientos, el cumplimiento de la homogeneidad de las matrices de varianza-covarianza —sumado al tamaño de muestra balanceado (15 unidades experimentales por tratamiento)— respalda que los resultados del MANOVA sean confiables.
+
+# IV. MANOVA en DCA
+
+Una vez verificados los supuestos necesarios, se ajusta el modelo MANOVA bajo un Diseño Completamente al Azar, donde el único factor de clasificación es el tratamiento de fertilización y las cuatro variables respuesta se modelan de manera conjunta como un vector.
+
+```{r modelo-manova}
+modelo <- manova(
+  cbind(Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD) ~ Tratamiento,
+  data = datos
+)
+```
+
+# Matrices SCPC del factor, residual y total. Bondad de ajuste
+
+En el contexto multivariado, la descomposición de la variabilidad total ya no se realiza mediante sumas de cuadrados escalares como en un ANOVA univariado, sino mediante matrices de sumas de cuadrados y productos cruzados (SCPC). La matriz $\mathbf{T}$ (total) se descompone en una matriz asociada al factor tratamiento, $\mathbf{H}$ (denotada `Fm` ), y una matriz residual o de error, $\mathbf{E}$ (denotada `W`, de "within" o "dentro de grupos"), de modo que $\mathbf{T} = \mathbf{H} + \mathbf{E}$. Capturando así tanto la variabilidad individual como la covariabilidad conjunta.
+
+```{r matrices-scpc}
+Matrices <- summary(modelo)$SS
+Fm <- Matrices$Tratamiento   
+W  <- Matrices$Residuals     
+Tm <- Fm + W                 
+
+Fm
+W
+Tm
+```
+
+Cálculo del $\eta^2$ para identificar la variabilidad de los tratamientos.
+```{r eta2}
+eta2 <- 1 - det(W) / det(Tm)
+eta2
+```
+**Interpretación:** Podemos decir que una proporción del 0.8161 o un 81.61% de la variabilidad de las variables respuesta pueden ser explicadas por la aplicación de los tratamientos.
+Siendo este un porcentaje bastante satisfactorio para determinar la influencia de los tratamientos en las decisiones que se tomarán.
+
+Este $\eta^2$ multivariado, calculado como $1 - \frac{|\mathbf{E}|}{|\mathbf{T}|}$, es el análogo multivariado del coeficiente de determinación $R^2$ de un modelo univariado. Un valor tan alto como 0.8161 sugiere que el factor tratamiento tiene una capacidad explicativa muy fuerte sobre el conjunto de las cuatro variables de crecimiento.
+
+# V. Pruebas de hipótesis del modelo
+
+Con el modelo ya ajustado, se contrasta la hipótesis central del MANOVA: si los vectores de medias de las cuatro variables respuesta son iguales entre los cinco tratamientos, o si al menos uno de ellos difiere del resto. Sea $\boldsymbol{\mu}_t = (\mu_{t1}, \mu_{t2}, \mu_{t3}, \mu_{t4})'$ el vector de medias poblacional de las variables respuesta (Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD) para el $t$-ésimo tratamiento, con $t = 1, 2, 3, 4, 5$. Las hipótesis se plantean como:
+
+$$
+H_0: \boldsymbol{\mu}_1 = \boldsymbol{\mu}_2 = \boldsymbol{\mu}_3 = \boldsymbol{\mu}_4 = \boldsymbol{\mu}_5
+$$
+
+$$
+H_1: \boldsymbol{\mu}_t \neq \boldsymbol{\mu}_{t'} \quad \text{para algún par } t \neq t', \quad t,t' = 1,2,3,4,5
+$$
+
+Bajo $H_0$ los cinco tratamientos producirían, en promedio, el mismo efecto conjunto sobre las cuatro variables de crecimiento; bajo $H_1$ existiría al menos un par de tratamientos $t$ y $t'$ cuyos vectores de medias serían distintos.
+
+```{r pruebas-hipotesis}
+summary(modelo, test = "Pillai")
+summary(modelo, test = "Wilks")
+summary(modelo, test = "Hotelling-Lawley")
+summary(modelo, test = "Roy")
+```
+
+A un nivel de significancia del 0.05, cada una de las pruebas estadísticas rechazan la hipótesis nula. Por lo tanto, podemos asegurar que existe al menos un tratamiento cuya influencia sobre las variables respuesta difiere sobre el resto de los vectores media.
+
+**Interpretación:** Es importante notar que este resultado global únicamente confirma la existencia de al menos una diferencia significativa en algún lugar del conjunto de tratamientos, pero no indica todavía cuáles tratamientos específicos difieren entre sí ni en qué variables particulares se manifiesta dicha diferencia. 
+
+# VI. ANOVAs univariados por variable respuesta
+
+Habiendo rechazado la hipótesis multivariada global, resulta natural preguntarse en cuáles de las cuatro variables respuesta se concentra el efecto del tratamiento. Para ello se descompone el modelo MANOVA en cuatro ANOVA univariados, uno por cada variable, manteniendo la misma estructura del factor Tratamiento. 
+
+```{r anovas-univariados}
+summary.aov(modelo)
+```
+**Interpretación:** Los ANOVA individuales nos indican de que las variables "Altura_cm", "Peso_seco_g" y "Clorofila_SPAD" fueron significativas para rechazar la hipótesis nula de las 4 pruebas previas. Sin embargo la variable N_hojas no fue significativa para rechazar la hipótesis nula. 
+
+# VII. Comparaciones por pares
+
+Para identificar específicamente entre qué tratamientos se presentan las diferencias detectadas por el MANOVA, se reajusta el modelo como una regresión lineal multivariada (`lm`) equivalente y se obtienen las medias marginales estimadas (`emmeans`) de cada tratamiento para las cuatro variables respuesta en conjunto. Estas medias marginales servirán de base para las comparaciones múltiples que se presentan a continuación.
+
+```{r modelo-lm}
+fit <- lm(cbind(Altura_cm, Peso_seco_g, N_hojas, Clorofila_SPAD) ~ Tratamiento,
+          data = datos)
+
+emm <- emmeans(fit, ~ Tratamiento | rep.meas)
+emm
+```
+
+```{r}
+as.data.frame(emm) %>%
+  ggplot(aes(x = Tratamiento, y = emmean, group = 1)) +
+  geom_point(size = 2) +
+  geom_line() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.15) +
+  facet_wrap(~ rep.meas, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Medias marginales estimadas por tratamiento (IC 95%)",
+       x = "Tratamiento", y = "Media estimada")
+```
+**El gráfico de perfiles permite visualizar de forma conjunta las medias estimadas y sus intervalos de confianza del 95% para cada tratamiento. Se aprecia que T4 se distancia claramente del resto en Altura_cm, N_hojas y Clorofila_SPAD, mientras que los intervalos de T1, T2 y T5 se superponen considerablemente en la mayoría de las variables**
+
+## VIII. Comparación general por Pares
+
+Una vez confirmado que existen diferencias globales entre tratamientos, se procede a realizar todas las comparaciones posibles entre pares de tratamientos ($\binom{5}{2} = 10$ contrastes en total).
+
+Sean $t$ y $t'$ dos tratamientos distintos cualesquiera del conjunto $\{T1, T2, T3, T4, T5\}$, con $t, t' = 1,2,\dots,5$ y $t \neq t'$. Para cada par $(t, t')$ se contrasta:
+
+$$
+H_0: 
+\begin{pmatrix} \mu_{Altura,t} \\ \mu_{Peso,t} \\ \mu_{Nhojas,t} \\ \mu_{Clorofila,t} \end{pmatrix}
+=
+\begin{pmatrix} \mu_{Altura,t'} \\ \mu_{Peso,t'} \\ \mu_{Nhojas,t'} \\ \mu_{Clorofila,t'} \end{pmatrix}
+$$
+
+$$
+H_1: 
+\begin{pmatrix} \mu_{Altura,t} \\ \mu_{Peso,t} \\ \mu_{Nhojas,t} \\ \mu_{Clorofila,t} \end{pmatrix}
+\neq
+\begin{pmatrix} \mu_{Altura,t'} \\ \mu_{Peso,t'} \\ \mu_{Nhojas,t'} \\ \mu_{Clorofila,t'} \end{pmatrix}
+$$
+
+$$
+\text{para todo par } t \neq t', \quad t,t' = 1,2,\dots,5
+$$
+
+Es decir, para cada uno de los diez pares de tratamientos posibles se evalúa si el vector completo de medias (altura, peso seco, número de hojas y clorofila) de un tratamiento $t$ es igual al del tratamiento $t'$, o si difiere en al menos una de sus cuatro componentes.
+
+```{r pares-bonferroni}
+mvcontrast(emm, method = "pairwise", mult.name = "rep.meas", adjust = "bonferroni")
+```
+
+## Comparación de cada Tratamiento frente al Control (T1)
+
+Además de las comparaciones exhaustivas entre todos los pares de tratamientos, tiene particular interés agronómico comparar cada tratamiento de fertilización directamente contra el grupo control (T1), pues esto permite determinar cuáles tratamientos generan realmente una mejora respecto a no aplicar fertilización. 
+
+Sea $t = 2, 3, 4, 5$ el índice de cada uno de los tratamientos de fertilización (T2, T3, T4 y T5) y $t = 1$ el índice fijo correspondiente al tratamiento control (T1). Para cada tratamiento $t \in \{2,3,4,5\}$ se contrasta:
+
+$$
+H_0: 
+\begin{pmatrix} \mu_{Altura,t} \\ \mu_{Peso,t} \\ \mu_{Nhojas,t} \\ \mu_{Clorofila,t} \end{pmatrix}
+=
+\begin{pmatrix} \mu_{Altura,1} \\ \mu_{Peso,1} \\ \mu_{Nhojas,1} \\ \mu_{Clorofila,1} \end{pmatrix}
+$$
+
+$$
+H_1: 
+\begin{pmatrix} \mu_{Altura,t} \\ \mu_{Peso,t} \\ \mu_{Nhojas,t} \\ \mu_{Clorofila,t} \end{pmatrix}
+\neq
+\begin{pmatrix} \mu_{Altura,1} \\ \mu_{Peso,1} \\ \mu_{Nhojas,1} \\ \mu_{Clorofila,1} \end{pmatrix}
+$$
+
+$$
+\text{para cada } t = 2,3,4,5
+$$
+
+```{r vs-control}
+mvcontrast(emm, method = "trt.vs.ctrl1", mult.name = "rep.meas",
+           ref = "T1", adjust = "bonferroni")
+```
+
+# Conclusiones
+
+A partir de la secuencia completa de análisis —verificación de supuestos, prueba global del MANOVA, descomposición en ANOVA univariados y comparaciones múltiples por pares— es posible sintetizar el efecto de los cinco tratamientos de fertilización sobre el crecimiento de la especie vegetal evaluada en las siguientes conclusiones:
+
+1) El análisis post-hoc evidencia que los tratamientos T3 y T4 son los únicos que generan un impacto estadísticamente significativo al compararse directamente con el grupo control (T1). Por el contrario, la aplicación de los tratamientos T2 y T5 no muestra diferencias relevantes respecto al control, comportándose de manera equivalente a este en el conjunto de las variables de respuesta evaluadas.
+
+2) Entre todas las alternativas analizadas, el tratamiento T4 se consolida como la opción más efectiva, superando de forma estadísticamente significativa a cada uno de los demás tratamientos. Este desempeño sobresaliente se refleja en que logró registrar los valores promedio más altos en las variables de desarrollo, destacando de manera particular en la altura de la planta, el número de hojas y la concentración de clorofila.
+
+3) Por su parte, los tratamientos T1, T2 y T5 conforman un grupo de menor respuesta con efectos estadísticos muy similares entre sí. En este escenario, el tratamiento T3 se posiciona en un nivel intermedio de efectividad, superando con claridad al control y a las opciones de menor rendimiento, pero manteniéndose por debajo del desempeño máximo alcanzado por T4.
